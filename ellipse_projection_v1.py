@@ -62,19 +62,33 @@ class EllipseCalculator:
         y_bias = np.square(self.rotations[:, 1])
         self.axis_bias = (x_bias, y_bias)
 
-    def set_axis_bias(self, bias: tuple[np.ndarray[float]]) -> None:
-        self.axis_bias = bias
-        print("helo")
+    def set_axis_bias(self, x_bias: list[float], y_bias: list[float]) -> None:
+        x_vec = np.array(
+            [x_bias[0], 0] + x_bias[1:] + [0]*(len(y_bias)-1)
+        )
+        y_vec = np.array(
+            [0, y_bias[0]] + [0]*(len(x_bias)-1) + y_bias[1:]
+        )
         
         B = np.identity(self.attrs)
+        B[:, 0] = np.sqrt(x_vec*0.01).T
+        B[:, 1] = np.sqrt(y_vec*0.01).T
+
+        print(np.linalg.norm(B[:, 1].T))
+
         print(B)
-        B[:, 0] = np.sqrt(bias[0])
-        B[:, 1] = np.sqrt(bias[1])
 
-        
+        for i in range(2, self.attrs):
+            v = np.zeros(self.attrs)
+            v[:i] = - B[i, :i] @ np.linalg.inv(B[:i, :i])
+            v[i] = 1
+            v /= np.linalg.norm(v)
+            B[:, i] = v.T
+            for j in range(i):
+                print(f"vector {j} dot vector {i}: {np.dot(v, B[:, j].T)}")
 
-        #for i in range(2, self.attrs):
-            #new_v = -np.linalg.inv(B[:i, :i].T) @ B[]
+        print(B)
+        print(np.linalg.det(B))
 
 
     def project_onto_plane(self) -> np.ndarray[np.ndarray[float]]:
@@ -143,52 +157,4 @@ class EllipseCalculator:
         msg += f"{round(A, 2)}x^2 + {round(B, 2)}xy + {round(C, 2)}y^2 = 1\n"
 
         return msg
-        
-
-            
-
-
-        
-
-
-
-# TESTING
-
-#each row is an axis of the ellipsoid
-EC = EllipseCalculator(6)
-
-test_axes = np.array(
-    [
-        [6, 0, 2, 1, 0, 7],
-        [1, 5, 0, 3, 0, 3],
-        [0, 1, 9, 4, 2, 2],
-        [1, 2, 0, 6, 1, 0],
-        [6, 0, 0, 0, 0, 0],
-        [0, 0, 7, 0, 8, 3]
-    ]
-)
-
-A = np.array(
-    [
-        [1, 0, 0, 0, 0, 0],
-        [0, 2, 0, 0, 0, 0],
-        [0, 0, 3, 0, 0, 0],
-        [0, 0, 0, 4, 0, 0],
-        [0, 0, 0, 0, 5, 0],
-        [0, 0, 0, 0, 0, 6]
-    ]
-)
-
-bias = (np.ndarray([20, 30, 5, 15, 0, 30]), np.ndarray([0, 9, 11, 75, 2, 3]))
-EC.set_ellipsoid(A)
-print("hello?!?!")
-#EC.apply_new_rotation((1, 3), np.pi/4)
-#EC.apply_new_rotation((0, 5), np.pi/6)
-#EC.apply_new_rotation((0, 1), np.pi/3)
-#print(EC)
-#EC.plot_on_plane()
-EC.set_axis_bias(bias)
-print("hi")
-
     
-
