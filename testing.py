@@ -32,8 +32,10 @@ EC.set_ellipsoid(A)
 EC.apply_new_rotation((1, 3), np.pi/4)
 EC.apply_new_rotation((0, 5), np.pi/6)
 EC.apply_new_rotation((0, 1), np.pi/3)
-#print(EC)
-#EC.plot_on_plane()
+print(EC)
+
 EC.set_axis_bias([30, 20, 10, 20], [75, 25])
+print(EC)
+EC.plot_on_plane()
 
 

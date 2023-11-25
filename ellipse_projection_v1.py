@@ -74,22 +74,13 @@ class EllipseCalculator:
         B[:, 0] = np.sqrt(x_vec*0.01).T
         B[:, 1] = np.sqrt(y_vec*0.01).T
 
-        print(np.linalg.norm(B[:, 1].T))
-
-        print(B)
-
         for i in range(2, self.attrs):
-            v = np.zeros(self.attrs)
+            v = B[:, i].T
             v[:i] = - B[i, :i] @ np.linalg.inv(B[:i, :i])
-            v[i] = 1
             v /= np.linalg.norm(v)
-            B[:, i] = v.T
-            for j in range(i):
-                print(f"vector {j} dot vector {i}: {np.dot(v, B[:, j].T)}")
 
-        print(B)
-        print(np.linalg.det(B))
-
+        self.rotations = B
+        self.update_axis_bias()
 
     def project_onto_plane(self) -> np.ndarray[np.ndarray[float]]:
         J = self.ellipsoid[:2, :2]
