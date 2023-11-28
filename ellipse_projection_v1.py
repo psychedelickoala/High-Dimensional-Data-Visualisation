@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from data_analysis_v1 import StatsCalculator
 
 
 class EllipseCalculator:
@@ -8,17 +9,26 @@ class EllipseCalculator:
         Performs operations on a hyperellipsoid in matrix form.
     """
 
-    def __init__(self, n_dimensions: int) -> None:
+    def __init__(self, data: StatsCalculator | np.ndarray[np.ndarray[float]]) -> None:
         """
         Initialises.
 
-        :param n_dimensions: Number of dimensions, should stay constant.
+        :param data: The ellipsoid to analyse, as a matrix, OR a stats calculator object.
         """
-        self.__N = n_dimensions
-        self.__original_ellipsoid = None
-        self.__ellipsoid = None
-        self.__axis_bias = None
-        self.__rotations = None
+        self.__N: int = None
+        self.__original_ellipsoid: np.ndarray[np.ndarray[float]] = None
+        self.__ellipsoid: np.ndarray[np.ndarray[float]] = None
+        self.__axis_bias: tuple[dict] = None
+        self.__rotations: np.ndarray[np.ndarray[float]] = None
+        self.__attribute_names: list[str] = None
+
+        if type(data) == StatsCalculator:
+            self.__attribute_names = data.get_attribute_names()
+            self.set_ellipsoid(data.get_covariance())
+
+        else:
+            self.__attribute_names = ["attr" + str(i) for i in range(data.shape()[0])]
+            self.set_ellipsoid(data)
 
 
     def set_ellipsoid(self, new_ellipsoid: np.ndarray[np.ndarray[float]] | None = None) -> None:
@@ -32,9 +42,10 @@ class EllipseCalculator:
         if new_ellipsoid is None:
             if self.__original_ellipsoid is None:
                 raise ValueError("No ellipsoid previously set")
-        elif new_ellipsoid.shape != (self.__N, self.__N):
-            raise ValueError(f"Argument has wrong shape. Required shape {(self.__N, self.__N)}, got shape {new_ellipsoid.shape}")
+        elif new_ellipsoid.shape[0] != new_ellipsoid.shape[1]:
+            raise ValueError(f"Argument has wrong shape. Required square, got shape {new_ellipsoid.shape}")
         else:
+            self.__N = new_ellipsoid.shape[0]
             self.__original_ellipsoid = new_ellipsoid.copy()
 
         self.__ellipsoid = self.__original_ellipsoid.copy()
@@ -114,7 +125,9 @@ class EllipseCalculator:
         """
         x_bias = np.square(self.__rotations[:, 0])
         y_bias = np.square(self.__rotations[:, 1])
-        self.__axis_bias = (x_bias, y_bias)
+        x_dict = {self.__attribute_names[i]: x_bias[i]*100 for i in range(self.__N) if x_bias[i] > 0.001}
+        y_dict = {self.__attribute_names[i]: y_bias[i]*100 for i in range(self.__N) if y_bias[i] > 0.001}
+        self.__axis_bias = (x_dict, y_dict)
 
 
     def __new_transformation(self, new_T: np.ndarray[np.ndarray[float]]) -> None:
@@ -133,19 +146,43 @@ class EllipseCalculator:
         self.__update_axis_bias()
 
 
-    def set_axis_bias(self, x_bias: list[float], y_bias: list[float]) -> None:
+    def set_axis_bias(self, x_bias: dict, y_bias: dict) -> None:
         """
         Rotates our perspective according to requested axis biases towards set attributes.
         Constructs an orthonormal basis, finding orthogonal verctors by solving systems of equations and then normalising.
 
         :param x_bias, y_bias: Lists of percentage weightings for attributes belonging to the x and y axes.
         """
+
+        assert set(x_bias.keys()).issubset(set(self.__attribute_names))
+        assert set(y_bias.keys()).issubset(set(self.__attribute_names))
+
+        # want first attribute in x_bias to be the first row/column, first attribute in y_bias to be second row/column
+        x_ind, y_ind = None, None
+        for i, attr in enumerate(self.__attribute_names):
+            if attr in x_bias.keys() and x_ind is None:
+                x_ind = i
+            if attr in y_bias.keys() and y_ind is None:
+                y_ind = i
+            if attr in x_bias.keys() and attr in y_bias.keys():
+                raise ValueError("x attributes and y attributes should not overlap.")
+            
+        if {x_ind, y_ind} != {0, 1}:
+            order = ((0, x_ind), (1, y_ind)) if x_ind < y_ind else ((1, y_ind), (0, x_ind))
+            for i1, i2 in order:
+                self.__attribute_names[i1], self.__attribute_names[i2] = self.__attribute_names[i2], self.__attribute_names[i1]
+                self.__original_ellipsoid[[i1, i2]] = self.__original_ellipsoid[[i2, i1]]
+                self.__original_ellipsoid[:, [i1, i2]] = self.__original_ellipsoid[:, [i2, i1]]
+
         x_vec = np.array(
-            [x_bias[0], 0] + x_bias[1:] + [0]*(self.__N - len(x_bias) - 1)
+            [(x_bias[attr] if attr in x_bias.keys() else 0) for attr in self.__attribute_names]
         )
         y_vec = np.array(
-            [0, y_bias[0]] + [0]*(len(x_bias)-1) + y_bias[1:] + [0]*(self.__N - len(x_bias) - len(y_bias))
+            [(y_bias[attr] if attr in y_bias.keys() else 0) for attr in self.__attribute_names]
         )
+
+        print(x_vec)
+        print(y_vec)
         
         B = np.identity(self.__N)
         B[:, 0] = np.sqrt(x_vec*0.01).T
@@ -187,8 +224,8 @@ class EllipseCalculator:
         """
         A, B, C = self.project_onto_plane()
 
-        x_min, x_max = (-2/np.sqrt(A), 2/np.sqrt(A)) if x_range is None else x_range
-        y_min, y_max = (-2/np.sqrt(C), 2/np.sqrt(C)) if y_range is None else y_range
+        x_min, x_max = (-5/np.sqrt(A), 5/np.sqrt(A)) if x_range is None else x_range
+        y_min, y_max = (-5/np.sqrt(C), 5/np.sqrt(C)) if y_range is None else y_range
 
         x = np.arange(x_min, x_max, res)
         y = np.arange(y_min, y_max, res)
@@ -196,7 +233,7 @@ class EllipseCalculator:
         Z = A*X**2 + B*X*Y + C*Y**2
 
         fig, ax = plt.subplots()
-        CS = ax.contourf(X, Y, Z, [0, 1, 2, 3, 4])
+        CS = ax.contourf(X, Y, Z, [0, 1, 4, 9])
         #ax.clabel(CS, inline=True, fontsize=10)
         ax.set_title(f'Ellipse Calculator at {id(self)}')
 
@@ -220,7 +257,11 @@ class EllipseCalculator:
         msg += "Resulting ellipsoid: \n"
         msg += str(np.round(self.__ellipsoid, decimals = 2)) + "\n\n"
         
-        msg += "Axis biases: \n"
+        self.__update_axis_bias()
+        msg += "x-axis biases: \n" + str(self.__axis_bias[0]) + "\n"
+        msg += "y-axis biases: \n" + str(self.__axis_bias[1]) + "\n"
+        
+        """
         msg += " attribute | x-bias | y-bias \n"
         self.__update_axis_bias()
         for i in range(self.__N):
@@ -236,6 +277,7 @@ class EllipseCalculator:
                 else:
                     msg += f"   {x}%   "
             msg += "\n"
+        """
         
         msg += "\nEllipse projected onto these axes: \n"
         A, B, C = self.project_onto_plane()
