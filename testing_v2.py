@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from ellipse_projection_v1 import EllipseCalculator
-from data_analysis_v1 import StatsCalculator
+from ellipse_projection_v2 import EllipseCalculator
+from data_analysis_v2 import StatsCalculator
 
 SC = StatsCalculator("sample_data.csv")
 EC = EllipseCalculator(SC)
