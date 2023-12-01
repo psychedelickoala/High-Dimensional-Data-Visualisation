@@ -16,18 +16,11 @@ class EllipseCalculator:
         :param data: The ellipsoid to analyse, as a matrix, OR a stats calculator object.
         """
         self.__N: int = None
-        self.__original_ellipsoid: np.ndarray[np.ndarray[float]] = None
         self.__ellipsoid: np.ndarray[np.ndarray[float]] = None
-        self.__axis_bias: tuple[dict] = None
-        self.__rotations: np.ndarray[np.ndarray[float]] = None
-        self.__attribute_names: list[str] = None
 
         if type(data) == StatsCalculator:
-            self.__attribute_names = data.get_attribute_names()
             self.set_ellipsoid(data.get_covariance())
-
         else:
-            self.__attribute_names = ["attr" + str(i) for i in range(data.shape()[0])]
             self.set_ellipsoid(data)
 
 
@@ -39,18 +32,8 @@ class EllipseCalculator:
         :raise ValueError: If no ellipsoid passed, and no original ellipsoid.
         :raise ValueError: If new_ellipsoid is not an NxN matrix.
         """
-        if new_ellipsoid is None:
-            if self.__original_ellipsoid is None:
-                raise ValueError("No ellipsoid previously set")
-        elif new_ellipsoid.shape[0] != new_ellipsoid.shape[1]:
-            raise ValueError(f"Argument has wrong shape. Required square, got shape {new_ellipsoid.shape}")
-        else:
-            self.__N = new_ellipsoid.shape[0]
-            self.__original_ellipsoid = new_ellipsoid.copy()
-
-        self.__ellipsoid = self.__original_ellipsoid.copy()
-        self.__rotations = np.identity(self.__N)
-        self.__update_axis_bias()
+        self.__N = new_ellipsoid.shape[0]
+        self.__ellipsoid = new_ellipsoid.copy()
 
     
 
@@ -68,12 +51,13 @@ class EllipseCalculator:
         """
         Orthogonally projects original ellipsoid onto plane from our perspective.
 
-        :raises AttributeError: If __ellipse has not been set.
         :return: 3-Tuple of A, B, C; coefficents in ellipse equation Ax^2 + Bxy + Cy^2 = 1.
         """
         # orthonormalise <u, v>
         u = vec1 / np.linalg.norm(vec1)
         v = vec2 - np.dot(vec2, u)
+        if np.linalg.norm(v) == 0:
+            raise ValueError("u and v must span a plane")
         v /= np.linalg.norm(v)
 
         P = np.vstack([u, v])
@@ -90,29 +74,21 @@ class EllipseCalculator:
 
         return T
     
-    
-    def plot_on_plane(self, x_range: tuple[float] = None, y_range: tuple[float] = None, res: float = 0.025) -> None:
+    def transformation_to_points(self, T: np.ndarray[float], num_points: int = 50) -> np.ndarray[float]:
+        X = np.linspace(0, 2*np.pi, num=num_points)
+        Y = np.linspace(0, 2*np.pi, num=num_points)
+        circle = np.vstack([np.cos(X), np.sin(Y)])
+        return T @ circle
+
+
+    def plot_on_plane(self, points: np.ndarray) -> None:
         """
         Generates and displays a static plot of the 2-D projection of the ellipsoid.
 
         :optional params x_range, y_range: Tuples containing the min and max values of x and y to plot.
         :optional param res: The resolution of the plot, smaller value -> higher resolution.
         """
-        A, B, C = self.project_onto_plane()
-
-        x_min, x_max = (-5/np.sqrt(A), 5/np.sqrt(A)) if x_range is None else x_range
-        y_min, y_max = (-5/np.sqrt(C), 5/np.sqrt(C)) if y_range is None else y_range
-
-        x = np.arange(x_min, x_max, res)
-        y = np.arange(y_min, y_max, res)
-        X, Y = np.meshgrid(x, y)
-        Z = A*X**2 + B*X*Y + C*Y**2
-
-        fig, ax = plt.subplots()
-        CS = ax.contourf(X, Y, Z, [0, 1, 4, 9])
-        #ax.clabel(CS, inline=True, fontsize=10)
-        ax.set_title(f'Ellipse Calculator at {id(self)}')
-
+        plt.plot(points[0], points[1])
         plt.show()
         
     
