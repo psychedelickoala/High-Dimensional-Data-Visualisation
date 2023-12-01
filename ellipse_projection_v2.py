@@ -9,7 +9,7 @@ class EllipseCalculator:
         Performs operations on a hyperellipsoid in matrix form.
     """
 
-    def __init__(self, data: StatsCalculator | np.ndarray[np.ndarray[float]]) -> None:
+    def __init__(self, data: StatsCalculator | np.ndarray[np.ndarray[float]], num_points: int = 50) -> None:
         """
         Initialises.
 
@@ -17,6 +17,10 @@ class EllipseCalculator:
         """
         self.__N: int = None
         self.__ellipsoid: np.ndarray[np.ndarray[float]] = None
+        
+        X = np.linspace(0, 2*np.pi, num=num_points)
+        Y = np.linspace(0, 2*np.pi, num=num_points)
+        self.__circle = np.vstack([np.cos(X), np.sin(Y)])
 
         if type(data) == StatsCalculator:
             self.set_ellipsoid(data.get_covariance())
@@ -47,11 +51,11 @@ class EllipseCalculator:
         return point @ self.__ellipsoid @ point.T <= 1
 
 
-    def project_onto_plane(self, vec1: np.ndarray[float], vec2: np.ndarray[float]) -> tuple[float]:
+    def project_onto_plane(self, vec1: np.ndarray[float], vec2: np.ndarray[float]) -> np.ndarray:
         """
         Orthogonally projects original ellipsoid onto plane from our perspective.
 
-        :return: 3-Tuple of A, B, C; coefficents in ellipse equation Ax^2 + Bxy + Cy^2 = 1.
+        :return: points
         """
         # orthonormalise <u, v>
         u = vec1 / np.linalg.norm(vec1)
@@ -72,13 +76,7 @@ class EllipseCalculator:
         T = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]]) \
             @ np.array([[np.sqrt(a), 0],[0, np.sqrt(b)]])
 
-        return T
-    
-    def transformation_to_points(self, T: np.ndarray[float], num_points: int = 50) -> np.ndarray[float]:
-        X = np.linspace(0, 2*np.pi, num=num_points)
-        Y = np.linspace(0, 2*np.pi, num=num_points)
-        circle = np.vstack([np.cos(X), np.sin(Y)])
-        return T @ circle
+        return T @ self.__circle
 
 
     def plot_on_plane(self, points: np.ndarray) -> None:
