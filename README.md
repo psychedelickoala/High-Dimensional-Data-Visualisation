@@ -6,7 +6,7 @@ Representing data collected with multiple parameters, with applications to physi
 ### Projection matrix onto a plane spanned by two vectors
 
 For orthonormal $n$-dimensional vectors $\boldsymbol{v_1}$ and $\boldsymbol{v_2}$, and an $n$-dimensional vector $\boldsymbol{x}$, the projection of $\boldsymbol{x}$ onto the plane spanned by $\boldsymbol{v_1}$ and $\boldsymbol{v_2}$ is given by:
-$$
+\[
 (\boldsymbol{x}\cdot\boldsymbol{v_1}) \boldsymbol{v_1} + (\boldsymbol{x}\cdot\boldsymbol{v_2}) \boldsymbol{v_2}
 $$
 Now, if we treat $\boldsymbol{v_1}$ and $\boldsymbol{v_2}$ as basis vectors, we can write the projection with two coordinates as
@@ -16,7 +16,7 @@ $$
     \text{---} & \boldsymbol{v_2} & \text{---}
 \end{bmatrix}
 \boldsymbol{x} = P \boldsymbol{x}
-$$
+\]
 where $P$ is the $2 \times n$ projection matrix onto our plane. 
 
 If we are given two vectors $\boldsymbol{u_1}$ and $\boldsymbol{u_2}$ that are not orthonormal, we can still construct an orthonormalised projection matrix onto the plane they span. First, set $\boldsymbol{v_1} := \boldsymbol{u_1}/|\boldsymbol{u_1}|$ so that $\boldsymbol{v_1}$ is a unit vector. Then, set $\boldsymbol{v_2} := \boldsymbol{u_2} - (\boldsymbol{u_2} \cdot \boldsymbol{v_1}) \boldsymbol{v_1}$ and normalise it to have unit length. Then we can construct $P$ as above.
