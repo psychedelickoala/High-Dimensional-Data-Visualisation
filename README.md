@@ -10,13 +10,13 @@ For orthonormal $n$-dimensional vectors $\boldsymbol{v_1}$ and $\boldsymbol{v_2}
 (\boldsymbol{x}\cdot\boldsymbol{v_1})\boldsymbol{v_1}+(\boldsymbol{x}\cdot\boldsymbol{v_2})\boldsymbol{v_2}
 ```
 Now, if we treat $\boldsymbol{v_1}$ and $\boldsymbol{v_2}$ as basis vectors, we can write the projection with two coordinates as
-
+```math
 \begin{bmatrix}
     \text{---} & \boldsymbol{v_1} & \text{---}  \\
     \text{---} & \boldsymbol{v_2} & \text{---}
 \end{bmatrix}
 \boldsymbol{x} = P \boldsymbol{x}
-
+```
 where $P$ is the $2 \times n$ projection matrix onto our plane. 
 
 If we are given two vectors $\boldsymbol{u_1}$ and $\boldsymbol{u_2}$ that are not orthonormal, we can still construct an orthonormalised projection matrix onto the plane they span. First, set $\boldsymbol{v_1} := \boldsymbol{u_1}/|\boldsymbol{u_1}|$ so that $\boldsymbol{v_1}$ is a unit vector. Then, set $\boldsymbol{v_2} := \boldsymbol{u_2} - (\boldsymbol{u_2} \cdot \boldsymbol{v_1}) \boldsymbol{v_1}$ and normalise it to have unit length. Then we can construct $P$ as above.
@@ -24,13 +24,13 @@ If we are given two vectors $\boldsymbol{u_1}$ and $\boldsymbol{u_2}$ that are n
 ### Finding the projection of a hyperellipsoid onto a plane
 
 Let $H$ be an $n$-dimensional ellipsoid with equation $\boldsymbol{x}^T A \boldsymbol{x} = 1$, where $A$ is a symmetric, positive definite $n \times n$ matrix. Let $L$ be the plane spanned by orthonormal vectors $\boldsymbol{u}$ and $\boldsymbol{v}$. We aim to project $H$ onto $L$. Let
-$$
+\[
 P:=
 \begin{bmatrix}
     \text{---} & \boldsymbol{u} & \text{---}  \\
     \text{---} & \boldsymbol{v} & \text{---}
 \end{bmatrix}
-$$
+\]
 be the $2 \times n$ projection matrix onto $L$.
 
 Let $f(\boldsymbol{x}) = \boldsymbol{x}^T A \boldsymbol{x}$. We want to find $\boldsymbol{x}$ for which $\nabla f (\boldsymbol{x})$ is parallel to $L$. These points, when projected onto $L$, will form the boundary of the shadow of $H$.
