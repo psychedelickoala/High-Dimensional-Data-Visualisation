@@ -2,12 +2,20 @@ import csv
 import numpy as np
 
 class StatsCalculator:
-    def __init__(self, filename: str) -> None:
+    def __init__(self, data: str | np.ndarray) -> None:
         self.__filename = None
         self.__attribute_names = []
         self.__data = None
         self.__covariance = None
-        self.reset(filename)
+        if type(data) == str:
+            self.reset(data)
+        else:
+            self.__data = data
+        self.__covariance = np.cov(self.__data)
+
+        avging_vec = np.ones((self.__data.shape[1], 1))/self.__data.shape[1]
+        self.__mean = self.__data @ avging_vec
+
 
     def __len__(self) -> int:
         return len(self.__attribute_names)
@@ -35,5 +43,13 @@ class StatsCalculator:
                     self.__data = np.vstack([self.__data, np.array(row).astype(float)])
 
         self.__data = self.__data.T
-        self.__covariance = np.cov(self.__data)
+
+    def get_outliers(self, cutoff: float) -> list[np.ndarray]:
+        outliers = []
+        for point in self.__data.T:
+            m_dist = np.sqrt((point - self.__mean.T) @ np.linalg.inv(self.__covariance) @ (point.T - self.__mean))
+            if m_dist > cutoff:
+                outliers.append(point)
+        return outliers
+
     
