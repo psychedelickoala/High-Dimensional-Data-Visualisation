@@ -102,12 +102,14 @@ Then, as $Q = TT^T$, we get
 \begin{bmatrix}
     \cos(\theta) & \sin(\theta)  \\
     -\sin(\theta) & \cos(\theta) 
-\end{bmatrix}\\
+\end{bmatrix}
+\\
 =
 \begin{bmatrix}
     a^2 \cos^2(\theta) + b^2 \sin^2(\theta) & (a^2 - b^2)\sin(\theta)\cos(\theta)  \\
     (a^2 - b^2)\sin(\theta)\cos(\theta) & a^2 \sin^2(\theta) + b^2 \cos^2(\theta)
-\end{bmatrix}\\
+\end{bmatrix}
+\\
 =
 \begin{bmatrix}
 J & K/2 \\
