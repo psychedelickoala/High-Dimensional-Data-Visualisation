@@ -102,15 +102,22 @@ Then, as $Q = TT^T$, we get
 \begin{bmatrix}
     \cos(\theta) & \sin(\theta)  \\
     -\sin(\theta) & \cos(\theta) 
-\end{bmatrix}
+\end{bmatrix}\\
 =
 \begin{bmatrix}
     a^2 \cos^2(\theta) + b^2 \sin^2(\theta) & (a^2 - b^2)\sin(\theta)\cos(\theta)  \\
     (a^2 - b^2)\sin(\theta)\cos(\theta) & a^2 \sin^2(\theta) + b^2 \cos^2(\theta)
-\end{bmatrix}
+\end{bmatrix}\\
 =
 \begin{bmatrix}
 J & K/2 \\
 K/2 & L
 \end{bmatrix}
 ```
+Pairing these up and combining them, we can see that $J + L = a^2 + b^2$, $J - L = (a^2 - b^2)\cos(2\theta)$, and $K = (a^2 - b^2)\sin(2\theta)$. Combining these last two equations yields $\sqrt{(J - L)^2 + K^2} = a^2 - b^2$. We can then find $a$, $b$ and $\theta$ by calculating:
+```math
+a^2 = (J + L + \sqrt{(J-L)^2 + K^2})/2\\
+b^2 = J + L - a^2\\
+\theta = \frac{1}{2}\sin\left(\frac{K}{a-b}\right)
+```
+Finally, we can substitute these values back to find $T$. We return the $2\times m$ matrix $TC$, consisting of $m$ points on the boundary of the ellipse.
