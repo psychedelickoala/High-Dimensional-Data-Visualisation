@@ -51,7 +51,7 @@ Now, let $\bar{\boldsymbol{x}} := P \boldsymbol{x}$ be the projection of $\bolds
 ```
 Again, $((P A^{-1} P^T)^{-1})^T = (P A^{-1} P^T)^{-1}$ by symmetry of $A$. 
 
-Therefore, the projection of $H$ onto $L$ is the ellipse with equation $ \bar{\boldsymbol{x}}^T (P A^{-1} P^T)^{-1} \bar{\boldsymbol{x}} = 1$.
+Therefore, the projection of $H$ onto $L$ is the ellipse with equation $\bar{\boldsymbol{x}}^T (P A^{-1} P^T)^{-1} \bar{\boldsymbol{x}} = 1$.
 
 ### Generating a sequence of points
 
@@ -74,5 +74,43 @@ T =
 \begin{bmatrix}
     a & 0  \\
     0 & b
+\end{bmatrix}
+```
+Let $J$, $K$, and $L$ be numbers so that
+```math
+Q =
+\begin{bmatrix}
+J & K/2 \\
+K/2 & L
+\end{bmatrix}
+.
+```
+Then, as $Q = TT^T$, we get
+```math
+\begin{bmatrix}
+    \cos(\theta) & -\sin(\theta)  \\
+    \sin(\theta) & \cos(\theta) 
+\end{bmatrix}
+\begin{bmatrix}
+    a & 0  \\
+    0 & b
+\end{bmatrix}
+\begin{bmatrix}
+    a & 0  \\
+    0 & b
+\end{bmatrix}
+\begin{bmatrix}
+    \cos(\theta) & \sin(\theta)  \\
+    -\sin(\theta) & \cos(\theta) 
+\end{bmatrix}
+=
+\begin{bmatrix}
+    a^2 \cos^2(\theta) + b^2 \sin^2(\theta) & (a^2 - b^2)\sin(\theta)\cos(\theta)  \\
+    (a^2 - b^2)\sin(\theta)\cos(\theta) & a^2 \sin^2(\theta) + b^2 \cos^2(\theta)
+\end{bmatrix}
+=
+\begin{bmatrix}
+J & K/2 \\
+K/2 & L
 \end{bmatrix}
 ```
