@@ -12,6 +12,8 @@ class StatsCalculator:
         else:
             self.__data = data
         self.__covariance = np.cov(self.__data)
+        self.__B = np.linalg.cholesky(self.__covariance)  # B @ B.T = covariance
+        self.__sorted_data = self.sort_data()
 
         avging_vec = np.ones((self.__data.shape[1], 1))/self.__data.shape[1]
         self.__mean = self.__data @ avging_vec
@@ -25,6 +27,12 @@ class StatsCalculator:
     
     def get_attribute_names(self) -> list[str]:
         return self.__attribute_names
+    
+    def sort_data(self) -> np.ndarray:
+        t_data = np.linalg.inv(self.__B) @ self.__data
+        indexlist = np.argsort(np.linalg.norm(t_data, axis=0))
+        sorted_t_data = t_data[:, indexlist]
+        return self.__B @ sorted_t_data
 
     def reset(self, filename) -> None:
         self.__filename = filename
