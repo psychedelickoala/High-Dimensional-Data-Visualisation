@@ -3,7 +3,7 @@ import numpy as np
 
 class StatsCalculator:
     def __init__(self, data: str | np.ndarray) -> None:
-        print("initialising")
+        
         self.__filename = None
         self.__attribute_names = []
         self.__mahal_dists = None
@@ -12,11 +12,12 @@ class StatsCalculator:
             self.read_from_file(data)
         else:
             self.__data = data
+        
         self.__dim = self.__data.shape[0]
         self.sort_data()
         
         self.__covariance = np.cov(self.__data)
-        self.__covariance_inv = np.linalg.inv(self.__covariance)
+
         self.__from_base = np.linalg.cholesky(self.__covariance)  # B @ B.T = covariance
         self.__to_base = np.linalg.inv(self.__from_base)
 
@@ -39,7 +40,7 @@ class StatsCalculator:
         return self.__attribute_names
     
     def m_dist(self, point: np.ndarray) -> float:
-        return np.sqrt((point - self.__mean.T) @ self.__covariance_inv @ (point.T - self.__mean))
+        return np.sqrt((point - self.__mean.T) @ np.linalg.inv(self.__covariance) @ (point.T - self.__mean))
     
     def sort_data(self) -> None:
         covariance = np.cov(self.__data)
@@ -54,9 +55,10 @@ class StatsCalculator:
         self.__data = (basis @ sorted_t_data) + mean
     
     def get_outlier_plane(self, cutoff: float) -> tuple[np.ndarray]:
+        # uses method 1
         ind = np.searchsorted(self.__mahal_dists, cutoff)
-        print(f"ind: {ind}")
-        t_outliers = (self.__to_base @ self.__data).T[ind:]
+        #print(f"ind: {ind}")
+        t_outliers = self.__data.T[ind:]  # (self.__to_base @ self.__data).T[ind:]
         if t_outliers.shape[0] == 0:
             raise ValueError("No data points outside confidence interval")
         elif t_outliers.shape[0] == 1:
@@ -67,7 +69,8 @@ class StatsCalculator:
             return u, v
         t_outliers -= np.mean(t_outliers, axis = 0, keepdims=True)
         t_proj = np.linalg.svd(t_outliers, full_matrices=True).Vh
-        return self.__from_base @ t_proj[0], self.__from_base @ t_proj[1]
+        #return self.__from_base @ t_proj[0], self.__from_base @ t_proj[1]
+        return t_proj[:2]
 
 
     def read_from_file(self, filename) -> None:

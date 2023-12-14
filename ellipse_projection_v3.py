@@ -36,7 +36,7 @@ class EllipseCalculator:
         """
         # orthonormalise u, v
         u = vec1 / np.linalg.norm(vec1)
-        v = vec2 - np.dot(vec2, u)
+        v = vec2 - np.dot(vec2, u)*u
         
         # checking linear independence
         if np.linalg.norm(v) == 0:
