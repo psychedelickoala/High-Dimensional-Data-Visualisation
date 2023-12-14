@@ -1,13 +1,12 @@
 import numpy as np
 from ellipse_projection_v3 import EllipseCalculator
 from data_analysis_v3 import StatsCalculator
-from time import time
 
 
-dim = 6
+dim = 5
 num_data = 1000
 
-data = np.random.chisquare(12, size = (dim, num_data))
+data = np.random.chisquare(6, size = (dim, num_data))
 #data = np.random.rand(dim, num_data)
 
 cov_base = np.random.rand(dim, dim)
@@ -17,7 +16,7 @@ centre = np.random.rand(dim)
 #data = np.random.multivariate_normal(centre, cov, size=num_data).T
 
 SC = StatsCalculator(data)
-K = SC.get_outlier_plane(3)
+K = SC.get_outlier_plane(2)
 
 M = K.T @ K
 
@@ -87,16 +86,12 @@ P = np.vstack([u, v])
 
 
 
-
-
-
-
 #EC = EllipseCalculator(A, num_points=30)
 
 #P = EC.get_projection_matrix(u, v)
 proj_data = EC.points_onto_plane(P, SC.get_data())
 axes = EC.axes_onto_plane(P)
-ellipses = EC.ellipsoid_onto_plane(P, SC.get_mean(), m_dists = [1, 2, 3])
+ellipses = EC.ellipsoid_onto_plane(P, SC.get_mean(), m_dists = [3])
 
 EC.plot_on_plane(ellipses, proj_data, axes)
 
