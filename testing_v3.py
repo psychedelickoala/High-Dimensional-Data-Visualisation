@@ -5,9 +5,9 @@ from time import time
 
 
 dim = 6
-num_data = 100000
+num_data = 1000
 
-data = np.random.chisquare(3, size = (dim, num_data))
+data = np.random.chisquare(12, size = (dim, num_data))
 #data = np.random.rand(dim, num_data)
 
 cov_base = np.random.rand(dim, dim)
@@ -17,13 +17,13 @@ centre = np.random.rand(dim)
 #data = np.random.multivariate_normal(centre, cov, size=num_data).T
 
 SC = StatsCalculator(data)
-K = SC.get_outlier_plane(3.5)
+K = SC.get_outlier_plane(3)
 
 M = K.T @ K
 
 C = SC.get_covariance()
 
-EC = EllipseCalculator(C)
+EC = EllipseCalculator(np.linalg.inv(C))
 
 B = np.linalg.cholesky(C).T
 
@@ -43,15 +43,16 @@ def orthonormalise(vec1, vec2):
 
 def f(u, v):
     global C, M
+    #return (u @ C @ u.T - u @ M @ u.T)**2 + (v @ C @ v.T - v @ M @ v.T)**2  + (v @ C @ u.T)**2
     return (u @ C @ u.T * u @ M @ u.T - 1)**2 + (v @ C @ v.T * v @ M @ v.T - 1)**2  + (v @ C @ u.T)**2   # + (v @ u.T)**2 + (v @ v.T - 1)**2 + (u @ u.T - 1)**2
 
 def grad(u, v):
-    global C, KM
+    global C, M
     
     du = 4 * (u @ C @ u.T * u @ M @ u.T - 1) * ((u @ C @ u.T) * M @ u.T + (u @ M @ u.T)* C @ u.T) + 2 * (u @ C @ v.T) * C @ v.T  #  +  2 * (u @ v.T) * v.T + 4 * (u @ u.T - 1) * u.T
-    
+    #du = 4*(u @ C @ u.T - u @ M @ u.T)*(C @ u.T - M @ u.T) + 2 * (u @ C @ v.T) * C @ v.T
     dv = 4 * (v @ C @ v.T * v @ M @ v.T - 1) * ((v @ C @ v.T) * M @ v.T + (v @ M @ v.T)* C @ v.T) + 2 * (v @ C @ u.T) * C @ u.T  #  + 2 * (v @ u.T) * u.T  + 4 * (v @ v.T - 1) * v.T
-
+    #dv = 4*(v @ C @ v.T - v @ M @ v.T)*(C @ v.T - M @ v.T) + 2 * (v @ C @ u.T) * C @ v.T
     return du / np.linalg.norm(du)**2, dv / np.linalg.norm(dv)**2
 
 def grad_descent(u, v, tol = 1e-8, verbose = False):
@@ -61,8 +62,8 @@ def grad_descent(u, v, tol = 1e-8, verbose = False):
     while c > tol:
         g = grad(u, v)
         prev_u, prev_v = u.copy(), v.copy()
-        u, v = orthonormalise(u - c*g[0], v - c*g[1])
-        if np.allclose(u, prev_u) and np.allclose(v, prev_v):
+        u, v = orthonormalise(prev_u - c*g[0], prev_v - c*g[1])
+        if (np.allclose(u, prev_u) and np.allclose(v, prev_v)) or i > 100000:
              raise TimeoutError(f"Error converged to {c}")
         c = f(u, v)
         if verbose:
@@ -75,8 +76,10 @@ def grad_descent(u, v, tol = 1e-8, verbose = False):
 
 u = np.random.rand(dim)
 v = np.random.rand(dim)
-u, v = grad_descent(u, v)
-print(u, v)
+u, v = grad_descent(u, v, tol = 0.01)
+P = np.vstack([u, v])
+
+
 
 
 #print(best_P)
@@ -91,9 +94,9 @@ print(u, v)
 #EC = EllipseCalculator(A, num_points=30)
 
 #P = EC.get_projection_matrix(u, v)
-#proj_data = EC.points_onto_plane(P, SC.get_data())
-#axes = EC.axes_onto_plane(P)
-#ellipses = EC.ellipsoid_onto_plane(P, SC.get_mean(), m_dists = [1, 2, 3])
+proj_data = EC.points_onto_plane(P, SC.get_data())
+axes = EC.axes_onto_plane(P)
+ellipses = EC.ellipsoid_onto_plane(P, SC.get_mean(), m_dists = [1, 2, 3])
 
-#EC.plot_on_plane(ellipses, proj_data, axes)
+EC.plot_on_plane(ellipses, proj_data, axes)
 
