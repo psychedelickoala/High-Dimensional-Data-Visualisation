@@ -5,7 +5,6 @@ class StatsCalculator:
     def __init__(self, data: str | np.ndarray) -> None:
         
         self.__filename = None
-        self.__attribute_names = []
         self.__mahal_dists = None
 
         if type(data) == str:
@@ -25,7 +24,7 @@ class StatsCalculator:
 
 
     def __len__(self) -> int:
-        return len(self.__attribute_names)
+        return self.__dim
     
     def get_covariance(self) -> np.ndarray[np.ndarray[float]]:
         return self.__covariance
@@ -36,8 +35,8 @@ class StatsCalculator:
     def get_mean(self) -> np.ndarray:
         return self.__mean
     
-    def get_attribute_names(self) -> list[str]:
-        return self.__attribute_names
+    #def get_attribute_names(self) -> list[str]:
+        #return self.__attribute_names
     
     def m_dist(self, point: np.ndarray) -> float:
         return np.sqrt((point - self.__mean.T) @ np.linalg.inv(self.__covariance) @ (point.T - self.__mean))
