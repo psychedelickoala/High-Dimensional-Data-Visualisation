@@ -87,7 +87,7 @@ class Calculator:
         plt.rcParams["axes.prop_cycle"] = plt.cycler("color", ["#fecb3e", "#fc8370", "#c2549d", "#7e549e"])
 
         # set plane
-        if type(plane) is str and "optimised" in plane:
+        if type(plane) is str and "optimise" in plane:
             cutoff = float(plane.split()[-1])
             u, v = self.optimise_plane(cutoff=cutoff, verbose=verbose)
             P = np.vstack([u, v])
@@ -101,16 +101,11 @@ class Calculator:
             P = np.vstack([u, v])
 
         # get ellipses
-        M = P @ np.linalg.inv(self.__ellipsoid) @ P.T
-        J, K, L = M[0, 0], M[0, 1] + M[1, 0], M[1, 1]
-        a = (J + L + np.sqrt((J-L)**2 + K**2))/2
-        b = J+L-a
-        theta = np.arcsin(K/(a-b))/2
-        T = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]]) \
-            @ np.array([[np.sqrt(a), 0],[0, np.sqrt(b)]])
+        M = P @ self.__covariance @ P.T
+        T = np.linalg.cholesky(M)
         proj_mean = P @ self.__mean
         ellipses = [(dist * T @ self.__circle) + proj_mean for dist in m_dists]
-        
+
         # return points
         if points_only:
             return ellipses
@@ -127,6 +122,57 @@ class Calculator:
         # plot ellipses
         for i in range(len(ellipses)):
             plt.plot(ellipses[i][0], ellipses[i][1])
+        
+        plt.show()
+        return P[0], P[1]
+    
+    def plot_comparison(self, optimise_cutoffs:list[int] = [0], across:int = 2, down:int = 2, m_dists:list[int] = [1, 2, 3], show_axes:bool = True, verbose:bool = False):
+        # for testing !
+        plt.rcParams["axes.prop_cycle"] = plt.cycler("color", ["#fecb3e", "#fc8370", "#c2549d", "#7e549e"])
+        planes = []
+        print(planes)
+        # get optimised plane
+        for i in range(down):
+            row = []
+            for _ in range(across):
+                u = np.random.rand(self.__dim) - 0.5
+                v = np.random.rand(self.__dim) - 0.5
+                u, v = self.__orthonormalise(u, v)
+                P = np.vstack([u, v])
+                row.append(P)
+            planes.append(row)
+        
+        for i, cutoff in enumerate(optimise_cutoffs):
+            u, v = self.optimise_plane(cutoff=cutoff, verbose=verbose)
+            P = np.vstack([u, v])
+            planes[i//across][i%across] = P
+        
+        fig, axs = plt.subplots(down, across)
+
+        for j in range(down):
+            for i in range(across):
+                P = planes[j][i]
+                if j*across + i < len(optimise_cutoffs):
+                    axs[j, i].set_title(f"optimised {optimise_cutoffs[j*across + i]}")
+                else:
+                    axs[j, i].set_title(f"random")
+                M = P @ self.__covariance @ P.T
+                T = np.linalg.cholesky(M)
+                proj_mean = P @ self.__mean
+                ellipses = [(dist * T @ self.__circle) + proj_mean for dist in m_dists]
+
+                # plot axes
+                if show_axes:
+                    for k in range(self.__dim):
+                        axs[j, i].plot([0, P.T[k][0]], [0, P.T[k][1]], c = "grey", linewidth = 1)
+
+                # plot points
+                proj_data = P @ self.__data
+                axs[j, i].scatter(proj_data[0], proj_data[1], c = "#000000", marker = ".")
+
+                # plot ellipses
+                for k in range(len(ellipses)):
+                    axs[j, i].plot(ellipses[k][0], ellipses[k][1])
 
         plt.show()
 
@@ -138,7 +184,7 @@ class Calculator:
         C = self.__covariance
         return (u @ C @ u.T) * (v @ C @ v.T) - ((u @ C @ v.T)**2)
 
-    def __total_m_dist(self, u, v, W):
+    def total_m_dist(self, u, v, W):
         C = self.__covariance
         return np.sum(self.__num(u, v, W))/self.__den(u, v)
 
@@ -162,33 +208,89 @@ class Calculator:
         size = np.linalg.norm(np.concatenate([du, dv]))
         return du/size, dv/size
 
-    def optimise_plane(self, cutoff = 0, step = 0.001, verbose = False):
-        W = self.get_outliers(cutoff)
-        u, v = np.identity(self.__dim)[0], np.identity(self.__dim)[1]
+    def optimise_plane(self, cutoff = 0, step = 0.005, verbose = False):
+        W = self.get_outliers(cutoff) - self.__mean
+        I = np.identity(self.__dim)
 
-        d = self.__total_m_dist(u, v, W)
-        prev_d = d - 1
+        results = []
+        for i in range(self.__dim):
+            for j in range(i+1, self.__dim):
+                if verbose:
+                    print(f"\n start: e{i+1}, e{j+1}")
 
-        while d - prev_d > 0:
-            if verbose:
-                print(f"new total dist: {d}. increment: {d - prev_d}")
-            du, dv = self.__d_total_m_dist(u, v, W)
-            u, v = self.__orthonormalise(u + step*du, v + step*dv)
-            prev_d = d
-            d = self.__total_m_dist(u, v, W)
+                u, v = I[i], I[j]
 
-        return u, v
+                d = self.total_m_dist(u, v, W)
+                prev_d = d - 1
+
+                while d - prev_d > 0:
+                    if verbose:
+                        print(f"new total dist: {d}. increment: {d - prev_d}")
+                    du, dv = self.__d_total_m_dist(u, v, W)
+                    u, v = self.__orthonormalise(u + step*du, v + step*dv)
+                    prev_d = d
+                    d = self.total_m_dist(u, v, W)
+
+                results.append((prev_d, i, j, (u, v)))
+        best_plane = max(results)[3]
+        return best_plane
 
 
+dim = 6
+num_data = 2000
 
-#C = np.array([
-#    [1, 0.2, 0.1],
-#    [0.2, 1, 0.3],
-#    [0.1, 0.3, 1]
-#])
-u = np.array([0, 1, 0])
-v = np.array([0, 0, 1])
+C = np.array([
+    [1, 0.2, 0.1, 0.5, 0.1, 0],
+    [0.2, 2, 0.3, 0.2, 0.6, 0.1],
+    [0.1, 0.3, 1, 0.1, 0, 0.1],
+    [0.5, 0.2, 0.1, 9, 0.5, 0],
+    [0.1, 0.6, 0, 0.5, 1, 0.3],
+    [0, 0.1, 0.1, 0, 0.3, 1]
+])
+
+main_mean = np.zeros(dim)
+
+#means = 50*np.identity(dim)
+
+#mean1 = np.array([10, 0, 0, 0])
+#mean2 = np.array([0, 10, 0, 0])
+#mean3 = np.array([0, 0, 10, 0])
+#mean4 = np.array([0, 0, -20, 0])
+
+#main_data = np.random.multivariate_normal(main_mean, np.identity(dim), size=num_data)
+num_clusters = 0
+
+data = np.random.multivariate_normal(main_mean, C, size=num_data)
+for i in range(num_clusters):
+    data = np.vstack([data, np.random.multivariate_normal(100*np.random.rand(dim) - 25, 0.1*np.identity(dim), size=100)])
+data = np.random.chisquare(2, size = (num_data, dim))
+#data = np.vstack([main_data, clusters]).T
+
+calc = Calculator(data.T)
+#u, v = calc.plot_on_plane(plane = "random", verbose=True)
+calc.plot_comparison(optimise_cutoffs=[0, 1, 2, 3, 4], across = 3, down = 3)
+
+'''
 P = np.vstack([u, v])
+
+proj_ellipse = np.linalg.inv((P @ calc.get_covariance()) @ P.T)
+proj_data_diffs = (P @ calc.get_data() - P @ calc.get_mean()).T
+
+
+sum = 0
+for w in proj_data_diffs:
+    if w @ proj_ellipse @ w.T > 4:
+        print(f"difference {w}, with distance {np.sqrt(w @ proj_ellipse @ w.T)}")
+    sum += w @ proj_ellipse @ w.T
+print(f"total projected distance: {sum}")
+'''
+
+
+
+
+
+
+'''
 W = np.array([
     [3, 2, .1],
     [4, -7, .3],
@@ -200,5 +302,5 @@ W = np.array([
 calc = Calculator(W)
 calc.plot_on_plane(plane= "optimised 1.5", verbose=True)
 
-
+'''
 
