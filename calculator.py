@@ -60,7 +60,7 @@ class Calculator:
     def read_from_file(self, filename) -> np.ndarray:
         with open(filename) as data_file:
             csv_reader = csv.reader(data_file, delimiter=',')
-            line_number = 0
+            line_number = 1
             for row in csv_reader:
                 if line_number == 1:
                     data = np.array(row).astype(float)
@@ -82,7 +82,7 @@ class Calculator:
 
         return u, v
     
-    def plot_on_plane(self, plane: tuple[np.ndarray] | str = "optimised 0", m_dists = [1, 2, 3], show_axes = True, points_only = False, verbose = False):
+    def plot_on_plane(self, plane: tuple[np.ndarray] | str = "optimised 0", m_dists = [1, 2, 3], show_axes = True, points_only = False, opt_sensitivity = 0.005, verbose = False):
         # set colours
         plt.rcParams["axes.prop_cycle"] = plt.cycler("color", ["#fecb3e", "#fc8370", "#c2549d", "#7e549e"])
 
@@ -126,7 +126,7 @@ class Calculator:
         plt.show()
         return P[0], P[1]
     
-    def plot_comparison(self, optimise_cutoffs:list[int] = [0], across:int = 2, down:int = 2, m_dists:list[int] = [1, 2, 3], show_axes:bool = True, verbose:bool = False):
+    def plot_comparison(self, optimise_cutoffs:list[int] = [0], across:int = 2, down:int = 2, m_dists:list[int] = [1, 2, 3], show_axes:bool = True, opt_sensitivity = 0.005, verbose:bool = False):
         # for testing !
         plt.rcParams["axes.prop_cycle"] = plt.cycler("color", ["#fecb3e", "#fc8370", "#c2549d", "#7e549e"])
         planes = []
@@ -235,72 +235,4 @@ class Calculator:
         best_plane = max(results)[3]
         return best_plane
 
-
-dim = 6
-num_data = 2000
-
-C = np.array([
-    [1, 0.2, 0.1, 0.5, 0.1, 0],
-    [0.2, 2, 0.3, 0.2, 0.6, 0.1],
-    [0.1, 0.3, 1, 0.1, 0, 0.1],
-    [0.5, 0.2, 0.1, 9, 0.5, 0],
-    [0.1, 0.6, 0, 0.5, 1, 0.3],
-    [0, 0.1, 0.1, 0, 0.3, 1]
-])
-
-main_mean = np.zeros(dim)
-
-#means = 50*np.identity(dim)
-
-#mean1 = np.array([10, 0, 0, 0])
-#mean2 = np.array([0, 10, 0, 0])
-#mean3 = np.array([0, 0, 10, 0])
-#mean4 = np.array([0, 0, -20, 0])
-
-#main_data = np.random.multivariate_normal(main_mean, np.identity(dim), size=num_data)
-num_clusters = 0
-
-data = np.random.multivariate_normal(main_mean, C, size=num_data)
-for i in range(num_clusters):
-    data = np.vstack([data, np.random.multivariate_normal(100*np.random.rand(dim) - 25, 0.1*np.identity(dim), size=100)])
-data = np.random.chisquare(2, size = (num_data, dim))
-#data = np.vstack([main_data, clusters]).T
-
-calc = Calculator(data.T)
-#u, v = calc.plot_on_plane(plane = "random", verbose=True)
-calc.plot_comparison(optimise_cutoffs=[0, 1, 2, 3, 4], across = 3, down = 3)
-
-'''
-P = np.vstack([u, v])
-
-proj_ellipse = np.linalg.inv((P @ calc.get_covariance()) @ P.T)
-proj_data_diffs = (P @ calc.get_data() - P @ calc.get_mean()).T
-
-
-sum = 0
-for w in proj_data_diffs:
-    if w @ proj_ellipse @ w.T > 4:
-        print(f"difference {w}, with distance {np.sqrt(w @ proj_ellipse @ w.T)}")
-    sum += w @ proj_ellipse @ w.T
-print(f"total projected distance: {sum}")
-'''
-
-
-
-
-
-
-'''
-W = np.array([
-    [3, 2, .1],
-    [4, -7, .3],
-    [1, 0, -.2],
-    [8, 2, -.1],
-    [-6, -1, -.2]
-]).T  # each COLUMN is a data point
-
-calc = Calculator(W)
-calc.plot_on_plane(plane= "optimised 1.5", verbose=True)
-
-'''
 

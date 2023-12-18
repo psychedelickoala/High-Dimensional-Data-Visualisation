@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 dim = 5
 num_data = 10000
-conf = 3
+conf = 0
 goof_dist = 20
 
 #data = np.random.chisquare(3, size = (dim, num_data))

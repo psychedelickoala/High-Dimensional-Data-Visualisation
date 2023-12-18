@@ -91,8 +91,9 @@ class EllipseCalculator:
         theta = np.arcsin(K/(a-b))/2
 
         # a matrix to transform the circle into the required ellipse: stretching then rotation
-        T = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]]) \
-            @ np.array([[np.sqrt(a), 0],[0, np.sqrt(b)]])
+        #T = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]]) \
+            #@ np.array([[np.sqrt(a), 0],[0, np.sqrt(b)]])
+        T = np.linalg.cholesky(M)
 
         # E is the projected ellipse
         ellipses = []
