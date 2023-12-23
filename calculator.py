@@ -3,15 +3,70 @@ import csv
 import matplotlib.pyplot as plt
 
 class Calculator:
-    def __init__(self, data: str | np.ndarray, ellipse_res: int = 50) -> None:
 
+    """
+    An object to store and process information about a dataset passed on initialisation.
+
+    :attribute __circle: 2 x num_points array; points around the unit circle, anticlockwise.
+    :attribute __covariance: dim x dim array; covariance matrix of data.
+    :attribute __data: dim x num_points array; each column is a datapoint, sorted in order of increasing Mahalanobis distance.
+    :attribute __dim: integer greater than one; number of dimensions.
+    :attribute __ellipsoid: dim x dim array; inverse of covariance matrix hence matrix of ellipse of best fit.
+    :attribute __mahal_dists: num_points length array; sorted Mahalanobis distances of each data point from the mean.
+    :attribute __mean: dim length array; centroid of the data set.
+    """
+
+    def __init__(self, data: str | np.ndarray, ellipse_res: int = 50) -> None:
+        """
+        Initialises calculator.
+        Reads and sorts data and constructs circle. These can be reset later.
+
+        :param data: filename of a csv file containing data, or dim x num_points array of data points.
+        :optional param ellipse_res: integer number of points to draw of the projected ellipses.
+        """
+
+        self.set_data(data)
+        self.set_ellipse_res(ellipse_res)
+
+    def __len__(self) -> int:
+        """Returns the number of dimensions"""
+        return self.__dim
+    
+    def get_covariance(self) -> np.ndarray[np.ndarray[float]]:
+        """Returns covariance matrix, dim x dim array"""
+        return self.__covariance
+    
+    def get_data(self) -> np.ndarray:
+        """Returns sorted data, dim x num_points array"""
+        return self.__data
+    
+    def get_mean(self) -> np.ndarray:
+        """Returns mean of data, dim length array"""
+        return self.__mean
+    
+    def get_outliers(self, cutoff: float) -> np.ndarray:
+        """
+        Gets data points with a certain Mahalanobis distance from the mean.
+
+        :param cutoff: float representing the minimum Mahalanobis distance that constitutes an 'outlier'
+        :return: dim x num_outliers array of points past this Mahalanobis distance.
+        """
+        ind = np.searchsorted(self.__mahal_dists, cutoff)
+        return self.__data[:, ind:]
+
+    def set_data(self, data: str | np.ndarray) -> None:
+        """
+        Set data for calculator to analyse.
+
+        :param data: filename of a csv file containing data, or dim x num_points array of data points.
+        """
         # gather raw data
         if type(data) == str:
             unsorted_data = self.read_from_file(data)
         else:
             unsorted_data = data
         
-        # calculate mean (column vector)
+        # calculate mean (can add/subtract from matrices)
         self.__mean = np.mean(unsorted_data, axis = 1, keepdims=True)
         
         #sorting the data based on increasing mahalanobis distance from mean
@@ -31,33 +86,26 @@ class Calculator:
 
         # ellipsoid matrix
         self.__ellipsoid: np.ndarray = np.linalg.inv(self.__covariance)
-        
+
+    def set_ellipse_res(self, ellipse_res: float) -> None:
+        """
+        Sets resolution of ellipse.
+
+        :param ellipse_res: integer number of points to draw of the projected ellipses.
+        """
         # constructing a circle to transform - done ONCE (on initialisation)
         X = np.linspace(0, 2*np.pi, num=ellipse_res)
         Y = np.linspace(0, 2*np.pi, num=ellipse_res)
         
         self.__circle: np.ndarray = np.vstack([np.cos(X), np.sin(Y)])
 
-    def __len__(self) -> int:
-        return self.__dim
-    
-    def get_covariance(self) -> np.ndarray[np.ndarray[float]]:
-        return self.__covariance
-    
-    def get_data(self) -> np.ndarray:
-        return self.__data
-    
-    def get_mean(self) -> np.ndarray:
-        return self.__mean
-    
-    def m_dist(self, point: np.ndarray) -> float:
-        return np.sqrt((point - self.__mean.T) @ np.linalg.inv(self.__covariance) @ (point.T - self.__mean))
-    
-    def get_outliers(self, cutoff: float) -> np.ndarray:
-        ind = np.searchsorted(self.__mahal_dists, cutoff)
-        return self.__data[:, ind:]
+    def read_from_file(self, filename: str) -> np.ndarray:
+        """
+        Reads data from a csv file. Each row of the file corresponds to one data point.
 
-    def read_from_file(self, filename) -> np.ndarray:
+        :param filename: path to csv file.
+        :return: dim x num_points array of data from file.
+        """
         with open(filename) as data_file:
             csv_reader = csv.reader(data_file, delimiter=',')
             line_number = 1
@@ -69,10 +117,17 @@ class Calculator:
                 line_number += 1
         return data.T
     
-    def __unit(self, u):
+    def __unit(self, u: np.ndarray) -> np.ndarray:
+        """Normalises a vector u."""
         return u/np.linalg.norm(u)
     
-    def __orthonormalise(self, u, v):
+    def __orthonormalise(self, u: np.ndarray, v: np.ndarray) -> tuple[np.ndarray]:
+        """
+        Orthonormalises two vectors u and v, shifting them both evenly.
+
+        :params u, v: arrays of equal dimensions
+        :return: tuple of two orthonormal vectors spanning the same plane as u and v
+        """
         u = self.__unit(u)
         v = self.__unit(v)
         m = self.__unit(u+v)
@@ -82,14 +137,28 @@ class Calculator:
 
         return u, v
     
-    def plot_on_plane(self, plane: tuple[np.ndarray] | str = "optimised 0", m_dists = [1, 2, 3], show_axes = True, points_only = False, opt_sensitivity = 0.005, verbose = False):
+    def plot_on_plane(self, plane: tuple[np.ndarray] | str = "optimised 0", m_dists: list[float] = [1, 2, 3], show_axes: bool = True,\
+        points_only: bool = False, opt_step: float = 0.005, opt_tol: float = 0.0001, verbose: bool = False) -> list[np.ndarray] | None:
+        """
+        Plots data onto a plane.
+
+        :optional param plane: tuple of dim x 1 vectors spanning a plane, else "optimised [cutoff]" or "random"; plane to project onto. Default "optimised 0"
+        :optional param m_dists: list of floats; Mahalanobis distances to draw ellipse. Default [1, 2, 3]
+        :optional param show_axes: boolean; whether or not to plot axes in grey. Default True.
+        :optional param points_only: boolean; whether or not to return an array of ellipse points rather than plotting. Default False.
+        :optional param opt_step: small float; sensitivity of steps in optimisation method. Smaller values cost computation time. Default 0.005
+        :optional param opt_tol: small float; tolerance of optimisation method. Default 0.0001
+        :optional param verbose: whether or not to print progress. Default False.
+
+        :return: list of 2 x ellipse_res arrays of points of an ellipse if points_only is True, else None.
+        """
         # set colours
         plt.rcParams["axes.prop_cycle"] = plt.cycler("color", ["#fecb3e", "#fc8370", "#c2549d", "#7e549e"])
 
         # set plane
         if type(plane) is str and "optimise" in plane:
             cutoff = float(plane.split()[-1])
-            u, v = self.optimise_plane(cutoff=cutoff, verbose=verbose)
+            u, v = self.optimise_plane(cutoff=cutoff, step=opt_step, tol = opt_tol, verbose=verbose)
             P = np.vstack([u, v])
         elif plane == "random":
             u = np.random.rand(self.__dim) - 0.5
@@ -126,11 +195,25 @@ class Calculator:
         plt.show()
         return P[0], P[1]
     
-    def plot_comparison(self, optimise_cutoffs:list[int] = [0], across:int = 2, down:int = 2, m_dists:list[int] = [1, 2, 3], show_axes:bool = True, opt_sensitivity = 0.005, verbose:bool = False):
+    def plot_comparison(self, optimise_cutoffs: list[float] = [0, 3], across: int = 2, down: int = 2, m_dists:list[float] = [1, 2, 3],\
+        show_axes: bool = True, opt_step: float = 0.005, opt_tol: float = 0.0001, verbose: bool = False) -> None:
+        """
+        Plots an across x down collection of viewpoints, some optimised and some random.
+
+        :optional param optimise_cutoffs: list of floats; cutoffs for different optimised viewpoints
+        :optional param across: integer number of plots to put across
+        :optional param down: integer number of plots to put down
+        :optional param m_dists: list of floats; Mahalanobis distances to draw ellipses. Default [1, 2, 3]
+        :optional param show_axes: boolean; whether or not to plot axes in grey. Default True.
+        :optional param opt_step: small float; sensitivity of steps in optimisation method. Smaller values cost computation time. Default 0.005
+        :optional param opt_tol: small float; tolerance of optimisation method. Default 0.0001
+        :optional param verbose: whether or not to print progress. Default False.
+        """
+
         # for testing !
         plt.rcParams["axes.prop_cycle"] = plt.cycler("color", ["#fecb3e", "#fc8370", "#c2549d", "#7e549e"])
         planes = []
-        print(planes)
+
         # get optimised plane
         for i in range(down):
             row = []
@@ -143,7 +226,7 @@ class Calculator:
             planes.append(row)
         
         for i, cutoff in enumerate(optimise_cutoffs):
-            u, v = self.optimise_plane(cutoff=cutoff, verbose=verbose)
+            u, v = self.optimise_plane(cutoff=cutoff, step=opt_step, tol=opt_tol, verbose=verbose)
             P = np.vstack([u, v])
             planes[i//across][i%across] = P
         
@@ -153,10 +236,15 @@ class Calculator:
             for i in range(across):
                 P = planes[j][i]
                 if j*across + i < len(optimise_cutoffs):
+                    if verbose:
+                        print(f"plotting optimised {optimise_cutoffs[j*across + i]}")
                     axs[j, i].set_title(f"optimised {optimise_cutoffs[j*across + i]}")
                 else:
+                    if verbose:
+                        print("plotting random")
                     axs[j, i].set_title(f"random")
-                M = P @ self.__covariance @ P.T
+                #M = np.linalg.inv(P @ self.__ellipsoid @ P.T)#
+                M= P @ self.__covariance @ P.T
                 T = np.linalg.cholesky(M)
                 proj_mean = P @ self.__mean
                 ellipses = [(dist * T @ self.__circle) + proj_mean for dist in m_dists]
@@ -176,28 +264,37 @@ class Calculator:
 
         plt.show()
 
-    def __num(self, u, v, W):
+    def __num(self, u: np.ndarray, v: np.ndarray, W: np.ndarray) -> np.ndarray:
+        """Numerator of function on u and v to maximise"""
         C = self.__covariance
         return ((u @ C @ u.T) * ((v @ W)**2)) - (2 * (u @ C @ v.T) * (u @ W) * (v @ W)) + ((v @ C @ v.T) * ((u @ W)**2))
 
-    def __den(self, u, v):
+    def __den(self, u: np.ndarray, v: np.ndarray) -> float:
+        """Denominator of function on u and v to maximise"""
         C = self.__covariance
         return (u @ C @ u.T) * (v @ C @ v.T) - ((u @ C @ v.T)**2)
 
-    def total_m_dist(self, u, v, W):
+    def total_m_dist(self, u: np.ndarray, v: np.ndarray, W: np.ndarray) -> float:
+        """
+        Function to maximise = total squared Mahalanobis distances of each data point from mean
+        using projection onto plane spanned by u, v
+        """
         C = self.__covariance
         return np.sum(self.__num(u, v, W))/self.__den(u, v)
 
-    def __d_num(self, m, a, W):
+    def __d_num(self, m: np.ndarray, a: np.ndarray, W: np.ndarray) -> np.ndarray:
+        """Partial derivative of numerator with respect to vector m"""
         C = self.__covariance
         return 2 * (a @ C @ a.T) * (m @ W) * W - 2*np.outer(C @ a, (m @ W)*(a @ W)) \
         - 2*(m @ C @ a.T) * (a @ W) * W + 2 * np.outer(C @ m, (a @ W)**2)
 
-    def __d_den(self, m, a):
+    def __d_den(self, m: np.ndarray, a: np.ndarray) -> np.ndarray:
+        """Partial derivative of denominator with respect to vector m"""
         C = self.__covariance
         return 2*(a @ C @ a.T)*(C @ m.T) - 2*(m @ C @ a.T)*(C @ a.T)
 
-    def __d_total_m_dist(self, u, v, W):
+    def __d_total_m_dist(self, u: np.ndarray, v: np.ndarray, W: np.ndarray) -> tuple[np.ndarray]:
+        """Gradient of total_m_dist function, normalised"""
         C = self.__covariance
         n = np.sum(self.__num(u, v, W))
         d = self.__den(u, v)
@@ -208,31 +305,50 @@ class Calculator:
         size = np.linalg.norm(np.concatenate([du, dv]))
         return du/size, dv/size
 
-    def optimise_plane(self, cutoff = 0, step = 0.005, verbose = False):
+    def optimise_slice_plane(self, cutoff: float = 0) -> tuple[np.ndarray]:
+        """
+        Gives the plane that maximises squared Mahalanobis distances using SLICE ellipse.
+        Starting point for projection optimisation.
+        
+        :param cutoff: float representing the minimum Mahalanobis distance that constitutes an 'outlier'
+        :return: tuple of arrays u, v; orthonormal vectors spanning the best fit plane.
+        """
+        
+        B = np.linalg.cholesky(self.__ellipsoid)
         W = self.get_outliers(cutoff) - self.__mean
-        I = np.identity(self.__dim)
+        W -= np.mean(W, axis = 1, keepdims=True)
+        T = np.linalg.inv(B) @ W
+        K = np.linalg.svd(T.T, full_matrices=True).Vh[:2]
+        P = K @ np.linalg.inv(B)
+        return self.__orthonormalise(P[0], P[1])
 
-        results = []
-        for i in range(self.__dim):
-            for j in range(i+1, self.__dim):
-                if verbose:
-                    print(f"\n start: e{i+1}, e{j+1}")
+    def optimise_plane(self, cutoff: float = 0, step: float = 0.005, tol: float = 0.001, verbose: bool = False) -> tuple[np.ndarray]:
+        """
+        Numerically searches for the plane that will maximise total_m_dist.
 
-                u, v = I[i], I[j]
+        :optional param cutoff: float representing the minimum Mahalanobis distance that constitutes an 'outlier'
+        :optional param step: small float; size of the step taken in n-dimensional space on each iteration
+        :optional param tol: small float; tolerance, will accept an answer once it is increasing by less than tol
+        :optional param verbose: boolean; whether or not to print progress
 
-                d = self.total_m_dist(u, v, W)
-                prev_d = d - 1
+        :return: tuple of arrays; orthonormal vectors spanning optimal plane.
+        """
 
-                while d - prev_d > 0:
-                    if verbose:
-                        print(f"new total dist: {d}. increment: {d - prev_d}")
-                    du, dv = self.__d_total_m_dist(u, v, W)
-                    u, v = self.__orthonormalise(u + step*du, v + step*dv)
-                    prev_d = d
-                    d = self.total_m_dist(u, v, W)
+        W = self.get_outliers(cutoff) - self.__mean
+        u, v = self.optimise_slice_plane(cutoff)
 
-                results.append((prev_d, i, j, (u, v)))
-        best_plane = max(results)[3]
-        return best_plane
+        d = self.total_m_dist(u, v, W)
+        if verbose:
+            print(f"Beginning optimisation with total distance of {d}")
 
+        prev_d = d - (tol + 1)
 
+        while d - prev_d > tol:
+            if verbose:
+                print(f"new total dist: {d}. increment: {d - prev_d}")
+            du, dv = self.__d_total_m_dist(u, v, W)
+            u, v = self.__orthonormalise(u + step*du, v + step*dv)
+            prev_d = d
+            d = self.total_m_dist(u, v, W)
+
+        return u, v
