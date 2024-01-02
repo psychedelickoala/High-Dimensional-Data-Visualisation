@@ -1,195 +1,189 @@
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import numpy as np
-from calculator import Calculator
+from calculator import Calculator, ProjGraph
 from matplotlib.widgets import Button, Slider, CheckButtons
+import pickle as pl
 
-class ProjGraph:
-    max_x = -np.inf
-    min_x = np.inf
+# Keeping track of interactive elements
+class InteractiveGraph:
 
-    max_y = -np.inf
-    min_y = np.inf
+    # Colours
+    class Palette:
+        light_green = [0.898, 0.988, 0.761]
+        green = [0.616, 0.878, 0.678]
+        blue = [0.271, 0.678, 0.659]
+        dark_blue = [0.329, 0.475, 0.502]
+        grey = [0.349, 0.31, 0.31]
+        off_white = [0.969, 0.945, 0.929]
+        black = [0, 0, 0]
 
-    def __init__(self, P: np.ndarray, calc: Calculator, cutoff: float, m_dists: list[float] = [1, 2, 3], remember = True) -> None:
-        self.P = P
-        #self.calc = calc
-        self.cutoff = cutoff
+        ellipse_colour = blue
+        ellipse_colours = None
+        bg_colour = green
+        slider_colour = dark_blue
+        slider_bg = off_white + [0.5]
+        graph_bg = off_white
+        points_colour = grey
+        redundant_points_colour = [rgb * 0.9 for rgb in graph_bg]
+        axes_colour = black
 
-        self.ellipses = calc.get_proj_ellipses(P, m_dists)
-        grey_data, black_data = calc.partition_data(cutoff)
-        self.grey_points, self.black_points = P @ grey_data, P @ black_data
+        title_font = {"color": off_white, "family": "serif"}
+        subtitle_font = {"color": off_white, "family": "serif", "size": 14}
 
-        # get min, max
-        if remember:
-            min_x = np.min(self.black_points[0])
-            max_x = np.max(self.black_points[0])
-            min_y = np.min(self.black_points[1])
-            max_y = np.max(self.black_points[1])
-            ProjGraph.min_x = min_x if min_x < ProjGraph.min_x else ProjGraph.min_x
-            ProjGraph.max_x = max_x if max_x > ProjGraph.max_x else ProjGraph.max_x
-            ProjGraph.min_y = min_y if min_y < ProjGraph.min_y else ProjGraph.min_y
-            ProjGraph.max_y = max_y if max_y > ProjGraph.max_y else ProjGraph.max_y
+        @classmethod
+        def __init__(cls) -> None:
+            cls.ellipse_colours = [[rgb * np.sqrt(np.sqrt(1/m_dist)) for rgb in cls.ellipse_colour] for m_dist in InteractiveGraph.M_DISTS]
+        
+        @classmethod
+        def remove_border(cls, ax: plt.Axes) -> None:
+            ax.spines['bottom'].set_color(cls.bg_colour)
+            ax.spines['top'].set_color(cls.bg_colour)
+            ax.spines['right'].set_color(cls.bg_colour)
+            ax.spines['left'].set_color(cls.bg_colour)
 
-class Palette:
-    light_green = [0.898, 0.988, 0.761]
-    green = [0.616, 0.878, 0.678]
-    blue = [0.271, 0.678, 0.659]
-    dark_blue = [0.329, 0.475, 0.502]
-    grey = [0.349, 0.31, 0.31]
+    # constant
+    M_DISTS: list[int] = [1, 2, 3, 4, 5, 6, 7, 8]
+    MAX_CUTOFF: float = None
+    PRECISION: int = None
+    PREPLOTS: list[ProjGraph] = None
+    CALC: Calculator = None
 
-    ellipse_colour = blue
-    bg_colour = green
-    slider_colour = dark_blue
-    slider_bg = [1, 1, 1, 0.5]
-    graph_bg = [0.969, 0.945, 0.929]
-    points_colour = grey
-    redundant_points_colour = [rgb * 0.9 for rgb in graph_bg]
-    axes_colour = dark_blue
+    # variable
+    curr_proj: ProjGraph = None
+    m_dists_using = [True, True, True, False, False, False, False, False]
 
-    @classmethod
-    def darken(cls, colour, factor):
-        return [rgb * factor for rgb in colour]
+    # widgets
+    fig = None
+    ax: plt.Axes = None
+    axslider: plt.Axes = None
+    cutoff_slider: Slider = None
+    axcheckbox: plt.Axes = None
+    m_checkbox: CheckButtons = None
+    axrandbutton: plt.Axes = None
+    rand_button: Button =  None
 
-    @classmethod
-    def get_ellipse_colours(self, m_dists = [1, 2, 3]) -> list[list]:
-        return [Palette.darken(Palette.ellipse_colour, np.sqrt(np.sqrt(1/m_dist))) for m_dist in m_dists]
+    def __init__(self, preplots: list[ProjGraph] | int = 200, calc: Calculator = None, limit: float = None) -> None:
+        self.Palette()
+        if calc is None:
+            readfile = input("Enter path to data csv file: ")
+            self.CALC = Calculator(readfile)
+        else:
+            self.CALC = calc
+        self.MAX_CUTOFF = self.CALC.get_max_cutoff()*0.95
+        self.PRECISION = preplots if type(preplots) is int else len(preplots)
+        
+
+        self.fig = plt.figure(facecolor=self.Palette.bg_colour)
+        self.ax = self.fig.add_axes([0.3, 0.1, 0.65, 0.75], facecolor = self.Palette.graph_bg)
+        
+        if type(preplots) is int:
+
+            P = None
+            self.PREPLOTS = []
+            for i in tqdm(range(self.PRECISION), desc = "Finding projections..."):
+                cutoff = i*self.MAX_CUTOFF/self.PRECISION
+
+                u, v = self.CALC.optimise_plane(cutoff=cutoff, factor = None, from_plane=P, verbose = False)
+                P = np.vstack([u, v])
+                self.PREPLOTS.append(ProjGraph(P, self.CALC, cutoff, self.M_DISTS))
+
+        else:
+            self.PREPLOTS = preplots
+            ProjGraph.lim = limit
+
+        self.limit = ProjGraph.lim
+
+        self.update(self.PREPLOTS[0])
+        self.ax.set_aspect('equal', adjustable='box')
+
+        # Slider
+        self.axslider = self.fig.add_axes([0.2, 0.1, 0.02, 0.75], facecolor=self.Palette.slider_bg)
+        self.axslider.set_title("Cutoff", fontdict=self.Palette.subtitle_font)
+        self.cutoff_slider = Slider(
+            ax=self.axslider,
+            label='',
+            valmin=0,
+            valmax=self.MAX_CUTOFF,
+            valinit=0,
+            handle_style={"edgecolor":self.Palette.slider_colour, "facecolor": self.Palette.graph_bg},
+            orientation="vertical",
+            color=self.Palette.slider_colour,
+            track_color=self.Palette.slider_bg,
+            closedmax=False,
+            initcolor=None
+        )
+        self.cutoff_slider.on_changed(self.change_cutoff)
+
+        # Checkboxes
+        self.axcheckbox = self.fig.add_axes([0.05, 0.5, 0.07, 0.35], facecolor=self.Palette.slider_bg)
+        self.axcheckbox.set_title("Ellipses", fontdict=self.Palette.subtitle_font)
+        self.Palette.remove_border(self.axcheckbox)
+
+        self.m_checkbox = CheckButtons(
+            ax = self.axcheckbox,
+            labels = ["1", "2", "3", "4", "5", "6", "7", "8"],
+            label_props={'color': self.Palette.ellipse_colours, "size":[14]*8, "family":['serif']*8},
+            frame_props={'edgecolor': self.Palette.ellipse_colours, "facecolor":'white'},
+            check_props={'facecolor': self.Palette.ellipse_colours},
+            actives=self.m_dists_using
+        )
+        self.m_checkbox.on_clicked(self.show_ellipse)
 
 
+        # Button
+        self.axrandbutton = self.fig.add_axes([0.05, 0.4, 0.07, 0.05])
+        self.Palette.remove_border(self.axrandbutton)
 
+        self.rand_button = Button(
+            ax=self.axrandbutton,
+            label = "Random",
+            color = self.Palette.slider_colour,
+            hovercolor = self.Palette.blue
+        )
 
-calc = Calculator("sample_data.csv")
+        self.rand_button.label.set_color(self.Palette.off_white)
+        self.rand_button.label.set_font('serif')
+        self.rand_button.label.set_fontsize(14)
+        self.rand_button.on_clicked(self.show_random)
 
-# Define initial parameters
-max_cutoff = calc.get_max_cutoff()*0.95
-precision = 200
-m_dists = [1, 2, 3, 4, 5, 6, 7, 8]
-m_dists_using = [True, True, True, False, False, False, False, False]
-preplots = []
-ellipse_colours = Palette.get_ellipse_colours(m_dists)
-curr_proj = None
-
-from_plane = None
-for i in tqdm(range(precision), desc = "Finding projections..."):
-    print()
-    cutoff = i*max_cutoff/precision
-
-    u, v = calc.optimise_plane(cutoff=cutoff, factor = None, from_plane=from_plane, verbose = False)
-    P = np.vstack([u, v])
-    preplots.append(ProjGraph(P, calc, cutoff, m_dists))
-
-    from_plane = (u, v)
-
-
-def change_cutoff(val):
-    proj = preplots[int(val*precision/max_cutoff)]
-    update(proj)
-
-def update(proj: ProjGraph):
-    global ax, curr_proj
-    curr_proj = proj
-    ax.cla()
-    #proj = preplots[int(val*precision/max_cutoff)]
-    ax.scatter(proj.grey_points[0], proj.grey_points[1], c = [Palette.redundant_points_colour], marker = ".")
-    ax.scatter(proj.black_points[0], proj.black_points[1], c = [Palette.points_colour], marker = ".")
-
-    for i, ellipse in enumerate(proj.ellipses):
-        if m_dists_using[i]:
-            ax.plot(ellipse[0], ellipse[1], c=ellipse_colours[i], linewidth = 2)
-
-    for proj_axis in proj.P.T:
-        ax.plot([0, proj_axis[0]], [0, proj_axis[1]], c = Palette.axes_colour, linewidth = 1)
+        self.fig.suptitle('Projected data', fontdict=self.Palette.title_font, fontsize=24)
     
-    ax.set_xbound(ProjGraph.min_x-1, ProjGraph.max_x+1)
-    ax.set_ybound(ProjGraph.min_y-1, ProjGraph.max_y+1)
-    fig.canvas.draw_idle()
+    def update(self, proj: ProjGraph | None = None):
+        if proj is not None:
+            self.curr_proj = proj
+        self.ax.cla()
+        self.ax.scatter(self.curr_proj.grey_points[0], self.curr_proj.grey_points[1], c = [self.Palette.redundant_points_colour], marker = ".")
+        self.ax.scatter(self.curr_proj.black_points[0], self.curr_proj.black_points[1], c = [self.Palette.points_colour], marker = ".")
 
-def show_random(event):
-    global ax
-    #ax.cla()
-    P = calc.get_random_plane()
-    rand_proj = ProjGraph(P, calc, cutoff_slider.val, m_dists, False)
-    update(rand_proj)
+        for i, ellipse in enumerate(self.curr_proj.ellipses):
+            if self.m_dists_using[i]:
+                self.ax.plot(ellipse[0], ellipse[1], c=self.Palette.ellipse_colours[i], linewidth = 2)
 
+        for proj_axis in self.curr_proj.P.T:
+            self.ax.plot([0, proj_axis[0]*self.limit*0.4], [0, proj_axis[1]*self.limit*0.4], c = self.Palette.axes_colour, linewidth = 1)
+        
+        self.ax.set_xbound(-self.limit*1.1, self.limit*1.1)
+        self.ax.set_ybound(-self.limit*1.1, self.limit*1.1)
 
-def show_ellipse(index):
-    global curr_proj
-    m_dists_using[int(index) - 1] = not m_dists_using[int(index) -1]
-    update(curr_proj)
+        self.fig.canvas.draw_idle()
 
+    def change_cutoff(self, val):
+        proj = self.PREPLOTS[int(val*self.PRECISION/self.MAX_CUTOFF)]
+        self.update(proj)
 
-title_font = {"color": [1, 1, 1], "family": "serif"}
-subtitle_font = {"color": [1, 1, 1], "family": "serif", "size": 14}
+    def show_random(self, event):
+        P = self.CALC.get_random_plane()
+        rand_proj = ProjGraph(P, self.CALC, self.cutoff_slider.val, self.M_DISTS, False)
+        self.update(rand_proj)
 
-# Create the figure and the line that we will manipulate
-fig = plt.figure(facecolor=Palette.bg_colour)
-ax = fig.add_axes([0.3, 0.1, 0.65, 0.75], facecolor = Palette.graph_bg)
+    def show_ellipse(self, index):
+        self.m_dists_using[int(index) - 1] = not self.m_dists_using[int(index) -1]
+        self.update()
 
-# adjust the main plot to make room for the sliders
-#fig.subplots_adjust(left=0.3)
-
-# Make a vertical slider to control the frequency.
-axslider = fig.add_axes([0.2, 0.1, 0.02, 0.75], facecolor=Palette.slider_bg)
-cutoff_slider = Slider(
-    ax=axslider,
-    label='',
-    valmin=0,
-    valmax=max_cutoff,
-    valinit=0,
-    handle_style={"edgecolor":Palette.slider_colour, "facecolor": Palette.graph_bg},
-    orientation="vertical",
-    color=Palette.slider_colour,
-    track_color=Palette.slider_bg,
-    closedmax=False,
-    initcolor=None
-)
-
-axcheckbox = fig.add_axes([0.05, 0.5, 0.07, 0.35], facecolor=Palette.slider_bg)
-m_checkbox = CheckButtons(
-    ax = axcheckbox,
-    labels = ["1", "2", "3", "4", "5", "6", "7", "8"],
-    label_props={'color': ellipse_colours, "size":[14]*8, "family":['serif']*8},
-    frame_props={'edgecolor': ellipse_colours, "facecolor":'white'},
-    check_props={'facecolor': ellipse_colours},
-    actives=m_dists_using
-)
-
-axcheckbox.spines['bottom'].set_color(Palette.bg_colour)
-axcheckbox.spines['top'].set_color(Palette.bg_colour)
-axcheckbox.spines['right'].set_color(Palette.bg_colour)
-axcheckbox.spines['left'].set_color(Palette.bg_colour)
-
-m_checkbox.on_clicked(show_ellipse)
-axcheckbox.set_title("Ellipses", fontdict=subtitle_font)
-axslider.set_title("Cutoff", fontdict=subtitle_font)
-
-axrandbutton = fig.add_axes([0.05, 0.1, 0.07, 0.05])
-rand_button = Button(
-    ax=axrandbutton,
-    label = "Random",
-    color = Palette.slider_colour,
-    hovercolor = Palette.blue
-)
-cutoff_slider.label.set_color('white')
-rand_button.label.set_color('white')
-rand_button.label.set_font('serif')
-rand_button.label.set_fontsize(14)
-
-axrandbutton.spines['bottom'].set_color(Palette.bg_colour)
-axrandbutton.spines['top'].set_color(Palette.bg_colour)
-axrandbutton.spines['right'].set_color(Palette.bg_colour)
-axrandbutton.spines['left'].set_color(Palette.bg_colour)
-
-rand_button.on_clicked(show_random)
-# register the update function with each slider
-cutoff_slider.on_changed(change_cutoff)
-
-update(preplots[0])
-
-
-#fig.subplots_adjust(top = 0.1)
-#axtitle = fig.add_axes([0.1, 0.1, 0.9, 0.1])
-fig.suptitle('Projected data', fontdict=title_font, fontsize=24)
-ax.set_aspect('equal', adjustable='box')
-
-plt.show()
+# Save to binary file
+if __name__=='__main__':
+    this_graph = InteractiveGraph(200)
+    #writefile = input("Enter path to save widget (.pickle extension): ")
+    #pl.dump((this_graph.PREPLOTS, this_graph.CALC, this_graph.limits), open(writefile,'wb'))
+    plt.show()

@@ -131,23 +131,25 @@ class Calculator:
                 line_number += 1
         return data.T
     
-    def __unit(self, u: np.ndarray) -> np.ndarray:
+    @staticmethod
+    def __unit(u: np.ndarray) -> np.ndarray:
         """Normalises a vector u."""
         return u/np.linalg.norm(u)
     
-    def __orthonormalise(self, u: np.ndarray, v: np.ndarray) -> tuple[np.ndarray]:
+    @staticmethod
+    def __orthonormalise(u: np.ndarray, v: np.ndarray) -> tuple[np.ndarray]:
         """
         Orthonormalises two vectors u and v, shifting them both evenly.
 
         :params u, v: arrays of equal dimensions
         :return: tuple of two orthonormal vectors spanning the same plane as u and v
         """
-        u = self.__unit(u)
-        v = self.__unit(v)
-        m = self.__unit(u+v)
+        u = Calculator.__unit(u)
+        v = Calculator.__unit(v)
+        m = Calculator.__unit(u+v)
 
-        u = (m/np.sqrt(2)) + self.__unit(u - np.dot(u, m)*m)/np.sqrt(2)
-        v = (m/np.sqrt(2)) + self.__unit(v - np.dot(v, m)*m)/np.sqrt(2)
+        u = (m/np.sqrt(2)) + Calculator.__unit(u - np.dot(u, m)*m)/np.sqrt(2)
+        v = (m/np.sqrt(2)) + Calculator.__unit(v - np.dot(v, m)*m)/np.sqrt(2)
 
         return u, v
     
@@ -301,15 +303,16 @@ class Calculator:
 
         plt.show()
 
-    def __num(self, u: np.ndarray, v: np.ndarray, W: np.ndarray) -> np.ndarray:
+    @staticmethod
+    def __num(u: np.ndarray, v: np.ndarray, C: np.ndarray, W: np.ndarray) -> np.ndarray:
         """Numerator of function on u and v to maximise"""
-        C = self.__covariance
         return ((u @ C @ u.T) * ((v @ W)**2)) - (2 * (u @ C @ v.T) * (u @ W) * (v @ W)) + ((v @ C @ v.T) * ((u @ W)**2))
 
-    def __den(self, u: np.ndarray, v: np.ndarray) -> float:
+    @staticmethod
+    def __den(u: np.ndarray, v: np.ndarray, C:np.ndarray) -> float:
         """Denominator of function on u and v to maximise"""
-        C = self.__covariance
         return (u @ C @ u.T) * (v @ C @ v.T) - ((u @ C @ v.T)**2)
+
 
     def total_m_dist(self, u: np.ndarray, v: np.ndarray, W: np.ndarray, mod: float | None = None) -> float:
         """
@@ -317,30 +320,30 @@ class Calculator:
         using projection onto plane spanned by u, v
         """
         if mod is not None:
-            return np.sum(np.exp(mod*self.__num(u, v, W)/self.__den(u, v)))
+            return np.sum(np.exp(mod*self.__num(u, v, self.__covariance, W)/self.__den(u, v, self.__covariance)))
         else:
-            return np.sum(self.__num(u, v, W)/self.__den(u, v))
+            return np.sum(self.__num(u, v, self.__covariance, W)/self.__den(u, v, self.__covariance))
 
-    def __d_num(self, m: np.ndarray, a: np.ndarray, W: np.ndarray) -> np.ndarray:
+    @staticmethod
+    def __d_num(m: np.ndarray, a: np.ndarray, C: np.ndarray, W: np.ndarray) -> np.ndarray:
         """Partial derivative of numerator with respect to vector m"""
-        C = self.__covariance
         return 2 * (a @ C @ a.T) * (m @ W) * W - 2*np.outer(C @ a, (m @ W)*(a @ W)) \
         - 2*(m @ C @ a.T) * (a @ W) * W + 2 * np.outer(C @ m, (a @ W)**2)
 
-    def __d_den(self, m: np.ndarray, a: np.ndarray) -> np.ndarray:
+    @staticmethod
+    def __d_den(m: np.ndarray, a: np.ndarray, C: np.ndarray) -> np.ndarray:
         """Partial derivative of denominator with respect to vector m"""
-        C = self.__covariance
         return 2*(a @ C @ a.T)*(C @ m.T) - 2*(m @ C @ a.T)*(C @ a.T)
 
     def __d_total_m_dist(self, u: np.ndarray, v: np.ndarray, W: np.ndarray, mod: float | None) -> tuple[np.ndarray]:
         """Gradient of total_m_dist function, normalised"""
-        n = self.__num(u, v, W)
-        d = self.__den(u, v)
+        n = self.__num(u, v, self.__covariance, W)
+        d = self.__den(u, v, self.__covariance)
         exps = np.exp(mod*n/d) if mod is not None else 1
         mod = mod if mod is not None else 1
  
-        du_mat = mod*(d*self.__d_num(u, v, W) - np.outer(self.__d_den(u, v), n))*exps/(d**2)
-        dv_mat = mod*(d*self.__d_num(v, u, W) - np.outer(self.__d_den(v, u), n))*exps/(d**2)
+        du_mat = mod*(d*self.__d_num(u, v, self.__covariance, W) - np.outer(self.__d_den(u, v, self.__covariance), n))*exps/(d**2)
+        dv_mat = mod*(d*self.__d_num(v, u, self.__covariance, W) - np.outer(self.__d_den(v, u, self.__covariance), n))*exps/(d**2)
 
         du, dv = np.sum(du_mat, axis=1), np.sum(dv_mat, axis=1)
         size = np.linalg.norm(np.concatenate([du, dv]))
@@ -362,7 +365,7 @@ class Calculator:
         P = K @ np.linalg.inv(B)
         return self.__orthonormalise(P[0], P[1])
 
-    def optimise_plane(self, cutoff: float | None = None, factor: float | None = None, from_plane: tuple[np.ndarray] | None = None, \
+    def optimise_plane(self, cutoff: float | None = None, factor: float | None = None, from_plane: np.ndarray | None = None, \
         step: float = 0.01, tol: float = 0.00001, verbose: bool = False) -> tuple[np.ndarray]:
         """
         Numerically searches for the plane that will maximise total_m_dist.
@@ -382,7 +385,7 @@ class Calculator:
         if from_plane is None:
             u, v = self.__optimise_slice_plane(W)
         else:
-            u, v = from_plane
+            u, v = from_plane[0], from_plane[1]
         mod = None if factor is None else np.log(factor)
 
         d = self.total_m_dist(u, v, W, mod)
@@ -403,3 +406,25 @@ class Calculator:
             print(u)
             print(v)
         return u, v
+    
+
+class ProjGraph:
+    lim = 0
+
+    def __init__(self, P: np.ndarray, calc: Calculator, cutoff: float, m_dists: list[float] = [1, 2, 3], remember = True) -> None:
+        self.P = P
+        #self.calc = calc
+        self.cutoff = cutoff
+
+        self.ellipses = calc.get_proj_ellipses(P, m_dists)
+        grey_data, black_data = calc.partition_data(cutoff)
+        self.grey_points, self.black_points = P @ grey_data, P @ black_data
+
+        # get min, max
+        if remember:
+            min_x = np.abs(np.min(self.black_points[0]))
+            max_x = np.abs(np.max(self.black_points[0]))
+            min_y = np.abs(np.min(self.black_points[1]))
+            max_y = np.abs(np.max(self.black_points[1]))
+            this_lim = max(min_x, max_x, min_y, max_y)
+            ProjGraph.lim = this_lim if this_lim > ProjGraph.lim else ProjGraph.lim
