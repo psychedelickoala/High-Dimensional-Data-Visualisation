@@ -8,7 +8,7 @@ from time import time
 n: int = 6
 
 # trials100 is the number of lots of 100 trials we are runningq
-trials100: int = 1
+trials100: int = 10
 
 # num_points is the number of points we want each time we make an ellipse
 num_points: int = 50

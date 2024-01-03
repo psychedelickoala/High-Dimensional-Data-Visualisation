@@ -17,7 +17,7 @@ class Calculator:
     :attribute __mean: dim length array; centroid of the data set.
     """
 
-    def __init__(self, data: str | np.ndarray, ellipse_res: int = 50) -> None:
+    def __init__(self, data: str | np.ndarray, ellipse_res: int = 30) -> None:
         """
         Initialises calculator.
         Reads and sorts data and constructs circle. These can be reset later.
@@ -31,7 +31,7 @@ class Calculator:
 
     def __len__(self) -> int:
         """Returns the number of dimensions"""
-        return self.__dim
+        return len(self.__mahal_dists)
     
     def get_covariance(self) -> np.ndarray[np.ndarray[float]]:
         """Returns covariance matrix, dim x dim array"""
@@ -54,9 +54,12 @@ class Calculator:
     def get_max_cutoff(self) -> float:
         return self.__mahal_dists[-2]
     
+    def get_max_norm(self) -> float:
+        return max(np.linalg.norm(self.__data, axis = 0))
+
     def partition_data(self, cutoff: float) -> tuple[np.ndarray]:
         ind = np.searchsorted(self.__mahal_dists, cutoff)
-        return self.__data[:, :ind], self.__data[:, ind:]
+        return ind
 
     def get_outliers(self, cutoff: float) -> np.ndarray:
         """
@@ -365,7 +368,7 @@ class Calculator:
         P = K @ np.linalg.inv(B)
         return self.__orthonormalise(P[0], P[1])
 
-    def optimise_plane(self, cutoff: float | None = None, factor: float | None = None, from_plane: np.ndarray | None = None, \
+    def optimise_plane(self, cutoff: float | None = None, points: np.ndarray | None = None, factor: float | None = None, from_plane: np.ndarray | None = None, \
         step: float = 0.01, tol: float = 0.00001, verbose: bool = False) -> tuple[np.ndarray]:
         """
         Numerically searches for the plane that will maximise total_m_dist.
@@ -379,7 +382,10 @@ class Calculator:
         :return: tuple of arrays; orthonormal vectors spanning optimal plane.
         """
         if cutoff is None:
-            W = self.__data - self.__mean
+            if points is None:
+                W = self.__data - self.__mean
+            else:
+                W = points
         else:
             W = self.get_outliers(cutoff) - self.__mean
         if from_plane is None:
@@ -407,24 +413,3 @@ class Calculator:
             print(v)
         return u, v
     
-
-class ProjGraph:
-    lim = 0
-
-    def __init__(self, P: np.ndarray, calc: Calculator, cutoff: float, m_dists: list[float] = [1, 2, 3], remember = True) -> None:
-        self.P = P
-        #self.calc = calc
-        self.cutoff = cutoff
-
-        self.ellipses = calc.get_proj_ellipses(P, m_dists)
-        grey_data, black_data = calc.partition_data(cutoff)
-        self.grey_points, self.black_points = P @ grey_data, P @ black_data
-
-        # get min, max
-        if remember:
-            min_x = np.abs(np.min(self.black_points[0]))
-            max_x = np.abs(np.max(self.black_points[0]))
-            min_y = np.abs(np.min(self.black_points[1]))
-            max_y = np.abs(np.max(self.black_points[1]))
-            this_lim = max(min_x, max_x, min_y, max_y)
-            ProjGraph.lim = this_lim if this_lim > ProjGraph.lim else ProjGraph.lim
