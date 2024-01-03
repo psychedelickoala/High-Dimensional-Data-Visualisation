@@ -364,7 +364,8 @@ class Calculator:
         B = np.linalg.cholesky(self.__ellipsoid)
         W -= np.mean(W, axis = 1, keepdims=True)
         T = np.linalg.inv(B) @ W
-        K = np.linalg.svd(T.T, full_matrices=True).Vh[:2]
+        u, D, Vh = np.linalg.svd(T.T, full_matrices=True)
+        K = Vh[:2]
         P = K @ np.linalg.inv(B)
         return self.__orthonormalise(P[0], P[1])
 
