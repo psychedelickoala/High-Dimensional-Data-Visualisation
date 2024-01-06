@@ -79,7 +79,7 @@ class Calculator:
         """
         # gather raw data
         if type(data) == str:
-            unsorted_data = self.read_from_file(data)
+            unsorted_data = np.loadtxt(fname = data, dtype=float, delimiter=",", skiprows=0).T
         else:
             unsorted_data = data
         
@@ -91,6 +91,7 @@ class Calculator:
         temp_basis = np.linalg.cholesky(temp_covariance)
 
         t_data = np.linalg.inv(temp_basis) @ (unsorted_data - self.__mean)
+        print("we sortin...")
         indexlist = np.argsort(np.linalg.norm(t_data, axis=0))
         sorted_t_data = t_data[:, indexlist]
 
@@ -116,24 +117,6 @@ class Calculator:
         
         self.__circle: np.ndarray = np.vstack([np.cos(X), np.sin(Y)])
 
-    def read_from_file(self, filename: str) -> np.ndarray:
-        """
-        Reads data from a csv file. Each row of the file corresponds to one data point.
-
-        :param filename: path to csv file.
-        :return: dim x num_points array of data from file.
-        """
-        with open(filename) as data_file:
-            csv_reader = csv.reader(data_file, delimiter=',')
-            line_number = 1
-            for row in csv_reader:
-                if line_number == 1:
-                    data = np.array(row).astype(float)
-                else:
-                    data = np.vstack([data, np.array(row).astype(float)])
-                line_number += 1
-        return data.T
-    
     @staticmethod
     def __unit(u: np.ndarray) -> np.ndarray:
         """Normalises a vector u."""
@@ -360,11 +343,10 @@ class Calculator:
         :param W: dim x num_points array of points to maximise slice plane through
         :return: tuple of arrays u, v; orthonormal vectors spanning the best fit plane.
         """
-        
         B = np.linalg.cholesky(self.__ellipsoid)
         W -= np.mean(W, axis = 1, keepdims=True)
         T = np.linalg.inv(B) @ W
-        u, D, Vh = np.linalg.svd(T.T, full_matrices=True)
+        u, D, Vh = np.linalg.svd(T.T, full_matrices=False)
         K = Vh[:2]
         P = K @ np.linalg.inv(B)
         return self.__orthonormalise(P[0], P[1])
@@ -386,7 +368,7 @@ class Calculator:
             if points is None:
                 W = self.__data - self.__mean
             else:
-                W = points
+                W = points - self.__mean
         else:
             W = self.get_outliers(cutoff) - self.__mean
         if from_plane is None:

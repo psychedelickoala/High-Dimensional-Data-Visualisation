@@ -2,7 +2,6 @@ import numpy as np
 import csv
 from calculator import Calculator
 
-
 print("Hello and welcome to my primitive example generator!")
 import_data = input("Would you like to use data from sample_data.csv? Y/N: ")
 if import_data == "Y":
@@ -29,7 +28,7 @@ else:
 
     # can choose "identity" to use identity matrix, 
     print("\n ~~ CHOOSING COVARIANCE AND CENTRE ~~")
-    print("Please specify a method of choosing the covariance matrix.")
+    print("Please specify a method of choosing the covarianceN matrix.")
     print(f"Input I to use the {dim}x{dim} identity matrix.")
     print(f"Input R to use a randomly generated {dim}x{dim} covariance matrix.")
     print(f"Input M to manually enter a {dim}x{dim} covariance matrix.")
@@ -100,7 +99,7 @@ else:
     for i in range(num_clusters):
         cluster_direction = 2*np.random.rand(dim) - 1
         cluster_mean = centre + cluster_dists[i]*(cluster_direction/np.linalg.norm(cluster_direction))
-        data = np.vstack([data, np.random.multivariate_normal(cluster_mean, 0.2*np.identity(dim), size=cluster_sizes[i])])
+        data = np.vstack([data, np.random.multivariate_normal(cluster_mean, cov, size=cluster_sizes[i])])
 
     print("Data generated according to specifications.")
     write_to_csv = input("\nWould you like to write this data to sample_data.csv? This will overwrite any existing data in the file. Y/N: ")
@@ -111,7 +110,7 @@ else:
     calc = Calculator(data.T)
 
 
-print("Plotting data...")
+#print("Plotting data...")
 
-calc.plot_comparison(optimise_cutoffs=[0, 1, 2, 3, 4], across = 3, down = 3)
-print("Plotting complete.")
+#calc.plot_comparison(optimise_cutoffs=[0, 1.5, 3, 4.5, 6, 7.5, 9, 10.5, 12], across = 3, down = 3, verbose = True)
+#print("Plotting complete.")

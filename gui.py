@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 import numpy as np
 from calculator import Calculator
-from matplotlib.widgets import Button, Slider, CheckButtons, LassoSelector
+from matplotlib.widgets import Button, Slider, CheckButtons, LassoSelector, RadioButtons
 from matplotlib.path import Path
 import pickle as pl
 
@@ -50,11 +50,14 @@ class InteractiveGraph:
     PRECISION: int = None
     PREPLOTS: list[np.ndarray] = None
     CALC: Calculator = None
+    FACTORS: list = [0.985, None, 1.05]
 
     # variable
     curr_proj: np.ndarray = None
+    points_ind: float | np.ndarray = 0
     curr_collection = None
     colours = None
+    weight_index = None
     m_dists_using = [True, True, True, False, False, False, False, False]
 
     # widgets
@@ -78,32 +81,46 @@ class InteractiveGraph:
         self.MAX_CUTOFF = self.CALC.get_max_cutoff()*0.95
         self.PRECISION = preplots if type(preplots) is int else len(preplots)
         self.point_colours = np.vstack([self.Palette.points_colour]*len(self.CALC))
+        self.weight_index = 1
+        self.points_ind = 0
         
-
+        # figure and axes
         self.fig = plt.figure(facecolor=self.Palette.bg_colour)
-        self.ax = self.fig.add_axes([0.3, 0.1, 0.65, 0.75], facecolor = self.Palette.graph_bg)
+        self.ax = self.fig.add_axes([0.35, 0.1, 0.6, 0.8], facecolor = self.Palette.graph_bg)
+        self.axslider = self.fig.add_axes([0.24, 0.1, 0.02, 0.8], facecolor=self.Palette.slider_bg)
+        self.axcheckbox = self.fig.add_axes([0.1, 0.55, 0.1, 0.35], facecolor=self.Palette.slider_bg)
+        self.axrandbutton = self.fig.add_axes([0.1, 0.45, 0.1, 0.05])
+        self.axlassobutton = self.fig.add_axes([0.1, 0.35, 0.1, 0.05])
+        self.axradio = self.fig.add_axes([0.1, 0.1, 0.1, 0.15], facecolor = self.Palette.slider_bg)
+
         
         if type(preplots) is int:
 
-            P = None
-            self.PREPLOTS = []
+            P_in = P_mid = P_out = None
+            #self.PREPLOTS = np.array([])
             for i in tqdm(range(self.PRECISION), desc = "Finding projections..."):
                 cutoff = i*self.MAX_CUTOFF/self.PRECISION
 
-                u, v = self.CALC.optimise_plane(cutoff=cutoff, factor = None, from_plane=P, verbose = False)
-                P = np.vstack([u, v])
-                self.PREPLOTS.append(P)
+                u, v = self.CALC.optimise_plane(cutoff=cutoff, factor = self.FACTORS[0], from_plane=P_in)
+                P_in = np.vstack([u, v])
+                u, v = self.CALC.optimise_plane(cutoff=cutoff, factor = self.FACTORS[1], from_plane=P_mid)
+                P_mid = np.vstack([u, v])
+                u, v = self.CALC.optimise_plane(cutoff=cutoff, factor = self.FACTORS[2], from_plane=P_out)
+                P_out = np.vstack([u, v])
+                row = np.stack([P_in, P_mid, P_out])[np.newaxis]
+                if i == 0:
+                    self.PREPLOTS = row
+                else:
+                    self.PREPLOTS = np.vstack([self.PREPLOTS, row])
 
         else:
             self.PREPLOTS = preplots
 
         self.limit = self.CALC.get_max_norm()
-
-
         self.ax.set_aspect('equal', adjustable='box')
 
         # Slider
-        self.axslider = self.fig.add_axes([0.2, 0.1, 0.02, 0.75], facecolor=self.Palette.slider_bg)
+
         self.axslider.set_title("Cutoff", fontdict=self.Palette.subtitle_font)
         self.cutoff_slider = Slider(
             ax=self.axslider,
@@ -121,7 +138,7 @@ class InteractiveGraph:
         self.cutoff_slider.on_changed(self.change_cutoff)
 
         # Checkboxes
-        self.axcheckbox = self.fig.add_axes([0.05, 0.5, 0.07, 0.35], facecolor=self.Palette.slider_bg)
+
         self.axcheckbox.set_title("Ellipses", fontdict=self.Palette.subtitle_font)
         self.Palette.remove_border(self.axcheckbox)
 
@@ -137,7 +154,7 @@ class InteractiveGraph:
 
 
         # Button
-        self.axrandbutton = self.fig.add_axes([0.05, 0.4, 0.07, 0.05])
+
         self.Palette.remove_border(self.axrandbutton)
 
         self.rand_button = Button(
@@ -153,7 +170,7 @@ class InteractiveGraph:
         self.rand_button.on_clicked(self.show_random)
 
         # Button
-        self.axlassobutton = self.fig.add_axes([0.05, 0.3, 0.07, 0.05])
+
         self.Palette.remove_border(self.axlassobutton)
 
         self.lasso_button = Button(
@@ -168,7 +185,22 @@ class InteractiveGraph:
         self.lasso_button.label.set_fontsize(14)
         self.lasso_button.on_clicked(self.lasso_select)
 
-        self.update(self.PREPLOTS[0])
+
+        self.Palette.remove_border(self.axradio)
+        self.axradio.set_title("Weighting", fontdict=self.Palette.subtitle_font)
+
+        self.factor_radio = RadioButtons(
+            ax = self.axradio,
+            labels=["Inner", "None", "Outer"],
+            label_props = {"color": [self.Palette.green, self.Palette.blue, self.Palette.dark_blue], "family":["serif"]*3, "size":[14]*3},
+            active = 1,
+            radio_props = {"facecolor": [self.Palette.green, self.Palette.blue, self.Palette.dark_blue],
+                           "edgecolor": [0.8*self.Palette.green, 0.8*self.Palette.blue, 0.8*self.Palette.dark_blue]}
+        )
+        self.factor_radio.on_clicked(self.change_factor)
+
+
+        self.update(self.PREPLOTS[self.points_ind, self.weight_index])
 
         self.fig.suptitle('Projected data', fontdict=self.Palette.title_font, fontsize=24)
     
@@ -193,11 +225,22 @@ class InteractiveGraph:
 
         self.fig.canvas.draw_idle()
 
+    def change_factor(self, label):
+        radio_labels = {"Inner": 0, "None": 1, "Outer": 2}
+        self.weight_index = radio_labels[label]
+        if type(self.points_ind) is not np.ndarray:
+            self.change_cutoff()
+        else:
+            points = self.CALC.get_data()[:, self.points_ind]
+            u, v = self.CALC.optimise_plane(points=points, from_plane=self.curr_proj, factor=self.FACTORS[self.weight_index])
+            P = np.vstack([u, v])
+            self.update(P)
+
     def change_cutoff(self, val = None):
-        proj = self.PREPLOTS[int(self.cutoff_slider.val*self.PRECISION/self.MAX_CUTOFF)]
-        ind = self.CALC.partition_data(self.cutoff_slider.val)
-        self.point_colours[ind:] = self.Palette.points_colour
-        self.point_colours[:ind] = self.Palette.redundant_points_colour
+        proj = self.PREPLOTS[int(self.cutoff_slider.val*self.PRECISION/self.MAX_CUTOFF), self.weight_index]
+        self.points_ind = self.CALC.partition_data(self.cutoff_slider.val)
+        self.point_colours[self.points_ind:] = self.Palette.points_colour
+        self.point_colours[:self.points_ind] = self.Palette.redundant_points_colour
         self.update(proj)
 
     def show_random(self, event):
@@ -213,10 +256,11 @@ class InteractiveGraph:
         if event.key == "enter":
             #print("Selected points:")
             self.lasso_button.color = self.Palette.slider_colour
-            points = self.CALC.get_data()[:, self.selector.ind]
+            self.points_ind = self.selector.ind
+            points = self.CALC.get_data()[:, self.points_ind]
             #print(selector.xys[selector.ind])
             self.ax.set_title("Loading projection...")
-            u, v = self.CALC.optimise_plane(points=points, from_plane=self.curr_proj)
+            u, v = self.CALC.optimise_plane(points=points, from_plane=self.curr_proj, factor=self.FACTORS[self.weight_index])
             P = np.vstack([u, v])
             self.update(P)
             
