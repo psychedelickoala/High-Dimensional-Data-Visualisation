@@ -91,7 +91,7 @@ class Calculator:
         temp_basis = np.linalg.cholesky(temp_covariance)
 
         t_data = np.linalg.inv(temp_basis) @ (unsorted_data - self.__mean)
-        print("we sortin...")
+
         indexlist = np.argsort(np.linalg.norm(t_data, axis=0))
         sorted_t_data = t_data[:, indexlist]
 
