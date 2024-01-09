@@ -34,7 +34,7 @@ class InteractiveGraph:
 
         @classmethod
         def __init__(cls) -> None:
-            cls.ellipse_colours = np.outer(np.sqrt(np.sqrt(np.reciprocal(np.array(InteractiveGraph.M_DISTS).astype(float)))), cls.ellipse_colour)
+            cls.ellipse_colours = np.outer(np.sqrt(np.sqrt(np.reciprocal(np.array(range(1, len(InteractiveGraph.M_DISTS)+1)).astype(float)))), cls.ellipse_colour)
         
         @classmethod
         def remove_border(cls, ax: plt.Axes) -> None:
@@ -45,12 +45,21 @@ class InteractiveGraph:
 
 
     # constant
-    M_DISTS: list[int] = [1, 2, 3, 4, 5, 6, 7, 8]
+    
     MAX_CUTOFF: float = None
     PRECISION: int = None
     PREPLOTS: list[np.ndarray] = None
     CALC: Calculator = None
     FACTORS: list = [0.985, None, 1.05]
+    CONFS: dict = {
+        "68.3%": 2.30,
+        "90.0%": 4.61,
+        "95.4%": 6.17,
+        "99.0%": 9.21,
+        "99.73%": 11.8,
+        "99.99%": 18.4
+    }
+    M_DISTS: list[int] = CONFS.values()
 
     # variable
     curr_proj: np.ndarray = None
@@ -58,7 +67,14 @@ class InteractiveGraph:
     curr_collection = None
     colours = None
     weight_index = None
-    m_dists_using = [True, True, True, False, False, False, False, False]
+    m_dists_using = {
+        2.30: True,
+        4.61: True,
+        6.17: True,
+        9.21: False,
+        11.8: False,
+        18.4: False
+    }
 
     # widgets
     fig = None
@@ -144,11 +160,11 @@ class InteractiveGraph:
 
         self.m_checkbox = CheckButtons(
             ax = self.axcheckbox,
-            labels = ["1", "2", "3", "4", "5", "6", "7", "8"],
-            label_props={'color': self.Palette.ellipse_colours, "size":[14]*8, "family":['serif']*8},
+            labels = self.CONFS.keys(),
+            label_props={'color': self.Palette.ellipse_colours, "size":[14]*len(self.CONFS), "family":['serif']*len(self.CONFS)},
             frame_props={'edgecolor': self.Palette.ellipse_colours, "facecolor":'white'},
             check_props={'facecolor': self.Palette.ellipse_colours},
-            actives=self.m_dists_using
+            actives=self.m_dists_using.values()
         )
         self.m_checkbox.on_clicked(self.show_ellipse)
 
@@ -213,7 +229,7 @@ class InteractiveGraph:
         self.curr_collection.set_facecolor(self.point_colours)
         
         #self.ax.scatter(self.curr_proj.black_points[0], self.curr_proj.black_points[1], c = [self.Palette.points_colour], marker = ".")
-        ellipses = self.CALC.get_proj_ellipses(self.curr_proj, [m for m in self.M_DISTS if self.m_dists_using[m-1]])
+        ellipses = self.CALC.get_proj_ellipses(self.curr_proj, [m for m in self.M_DISTS if self.m_dists_using[m]])
         for i, ellipse in enumerate(ellipses):
             self.ax.plot(ellipse[0], ellipse[1], c=self.Palette.ellipse_colours[i], linewidth = 2)
 
@@ -267,8 +283,8 @@ class InteractiveGraph:
             self.selector.disconnect()
             self.fig.canvas.draw_idle()
 
-    def show_ellipse(self, index):
-        self.m_dists_using[int(index) - 1] = not self.m_dists_using[int(index) -1]
+    def show_ellipse(self, label):
+        self.m_dists_using[self.CONFS[label]] = not self.m_dists_using[self.CONFS[label]]
         self.update()
 
 

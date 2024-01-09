@@ -17,7 +17,7 @@ class Calculator:
     :attribute __mean: dim length array; centroid of the data set.
     """
 
-    def __init__(self, data: str | np.ndarray, ellipse_res: int = 30) -> None:
+    def __init__(self, data: str | np.ndarray, ellipse_res: int = 60) -> None:
         """
         Initialises calculator.
         Reads and sorts data and constructs circle. These can be reset later.
@@ -143,7 +143,7 @@ class Calculator:
         M = P @ self.__covariance @ P.T
         T = np.linalg.cholesky(M)
         proj_mean = P @ self.__mean
-        return [(dist * T @ self.__circle) + proj_mean for dist in m_dists]
+        return [(np.sqrt(dist) * T @ self.__circle) + proj_mean for dist in m_dists]
 
     
     def plot_on_plane(self, plane: tuple[np.ndarray] | str = "optimised 0", m_dists: list[float] = [1, 2, 3], show_axes: bool = True,\
