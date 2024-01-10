@@ -65,6 +65,7 @@ class InteractiveGraph:
     curr_collection = None
     colours = None
     weight_index = None
+    dragged = None
     m_dists_using = dict = {
         "68.3%": True,
         "90.0%": True,
@@ -269,6 +270,22 @@ class InteractiveGraph:
             else:
                 self.curr_proj = np.vstack([u, v])
                 self.update()
+        else:
+            self.dragged = int(event.artist.get_text()[1:])
+            self.drag_id = self.fig.canvas.mpl_connect("motion_notify_event", self.drag_axes)
+            self.release_id = self.fig.canvas.mpl_connect('button_release_event', self.stop_dragging)
+            
+    def drag_axes(self, event):
+        u, v = self.curr_proj[0], self.curr_proj[1]
+        u[self.dragged] = event.xdata*2/self.limit
+        v[self.dragged] = event.ydata*2/self.limit
+        u, v = self.CALC.orthonormalise(u, v)
+        self.update(np.vstack([u, v]))
+
+    def stop_dragging(self, event):
+        self.dragged = None
+        self.fig.canvas.mpl_disconnect(self.drag_id)
+        self.fig.canvas.mpl_disconnect(self.release_id)
 
 
     def change_factor(self, label):
