@@ -1,10 +1,13 @@
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import numpy as np
+from scipy.stats import norm, chi2
 from calculator import Calculator
 from matplotlib.widgets import Button, Slider, CheckButtons, LassoSelector, RadioButtons
 from matplotlib.path import Path
 import pickle as pl
+import warnings
+warnings.filterwarnings("error")
 
 # Keeping track of interactive elements
 class InteractiveGraph:
@@ -34,7 +37,7 @@ class InteractiveGraph:
 
         @classmethod
         def __init__(cls) -> None:
-            cls.ellipse_colours = np.outer(np.sqrt(np.sqrt(np.reciprocal(np.array(range(1, len(InteractiveGraph.M_DISTS)+1)).astype(float)))), cls.ellipse_colour)
+            cls.ellipse_colours = np.outer(np.sqrt(np.sqrt(np.reciprocal(np.array(range(1, len(InteractiveGraph.m_dists_using)+1)).astype(float)))), cls.ellipse_colour)
         
         @classmethod
         def remove_border(cls, ax: plt.Axes) -> None:
@@ -47,33 +50,28 @@ class InteractiveGraph:
     # constant
     
     MAX_CUTOFF: float = None
+    MAX_SD: float = 3.5
     PRECISION: int = None
     PREPLOTS: list[np.ndarray] = None
     CALC: Calculator = None
     FACTORS: list = [0.985, None, 1.05]
-    CONFS: dict = {
-        "68.3%": 2.30,
-        "90.0%": 4.61,
-        "95.4%": 6.17,
-        "99.0%": 9.21,
-        "99.73%": 11.8,
-        "99.99%": 18.4
-    }
-    M_DISTS: list[int] = CONFS.values()
+    CONFS: dict = None
+
 
     # variable
     curr_proj: np.ndarray = None
+    axes_zeroed = None
     points_ind: float | np.ndarray = 0
     curr_collection = None
     colours = None
     weight_index = None
-    m_dists_using = {
-        2.30: True,
-        4.61: True,
-        6.17: True,
-        9.21: False,
-        11.8: False,
-        18.4: False
+    m_dists_using = dict = {
+        "68.3%": True,
+        "90.0%": True,
+        "95.4%": True,
+        "99.0%": False,
+        "99.73%": False,
+        "99.99%": False
     }
 
     # widgets
@@ -96,7 +94,17 @@ class InteractiveGraph:
         
         self.MAX_CUTOFF = self.CALC.get_max_cutoff()*0.95
         self.PRECISION = preplots if type(preplots) is int else len(preplots)
+        self.CONFS: dict = {
+            "68.3%": np.sqrt(chi2.ppf(0.683, self.CALC.get_dim())),
+            "90.0%": np.sqrt(chi2.ppf(0.9, self.CALC.get_dim())),
+            "95.4%": np.sqrt(chi2.ppf(0.954, self.CALC.get_dim())),
+            "99.0%": np.sqrt(chi2.ppf(0.99, self.CALC.get_dim())),
+            "99.73%": np.sqrt(chi2.ppf(0.9973, self.CALC.get_dim())),
+            "99.99%": np.sqrt(chi2.ppf(0.9999, self.CALC.get_dim()))
+        }
+        self.M_DISTS: list[int] = self.CONFS.values()
         self.point_colours = np.vstack([self.Palette.points_colour]*len(self.CALC))
+        self.axes_zeroed = [False]*self.CALC.get_dim()
         self.weight_index = 1
         self.points_ind = 0
         
@@ -115,13 +123,13 @@ class InteractiveGraph:
             P_in = P_mid = P_out = None
             #self.PREPLOTS = np.array([])
             for i in tqdm(range(self.PRECISION), desc = "Finding projections..."):
-                cutoff = i*self.MAX_CUTOFF/self.PRECISION
+                sd = i*self.MAX_SD/self.PRECISION
 
-                u, v = self.CALC.optimise_plane(cutoff=cutoff, factor = self.FACTORS[0], from_plane=P_in)
+                u, v = self.CALC.optimise_plane(sd=sd, factor = self.FACTORS[0], from_plane=P_in)
                 P_in = np.vstack([u, v])
-                u, v = self.CALC.optimise_plane(cutoff=cutoff, factor = self.FACTORS[1], from_plane=P_mid)
+                u, v = self.CALC.optimise_plane(sd=sd, factor = self.FACTORS[1], from_plane=P_mid)
                 P_mid = np.vstack([u, v])
-                u, v = self.CALC.optimise_plane(cutoff=cutoff, factor = self.FACTORS[2], from_plane=P_out)
+                u, v = self.CALC.optimise_plane(sd=sd, factor = self.FACTORS[2], from_plane=P_out)
                 P_out = np.vstack([u, v])
                 row = np.stack([P_in, P_mid, P_out])[np.newaxis]
                 if i == 0:
@@ -137,12 +145,12 @@ class InteractiveGraph:
 
         # Slider
 
-        self.axslider.set_title("Cutoff", fontdict=self.Palette.subtitle_font)
+        self.axslider.set_title("Standard \ndeviations", fontdict=self.Palette.subtitle_font)
         self.cutoff_slider = Slider(
             ax=self.axslider,
             label='',
             valmin=0,
-            valmax=self.MAX_CUTOFF,
+            valmax=self.MAX_SD,
             valinit=0,
             handle_style={"edgecolor":self.Palette.slider_colour, "facecolor": self.Palette.graph_bg},
             orientation="vertical",
@@ -215,31 +223,53 @@ class InteractiveGraph:
         )
         self.factor_radio.on_clicked(self.change_factor)
 
-
+        self.fig.canvas.mpl_connect('pick_event', self.pick_axes)
         self.update(self.PREPLOTS[self.points_ind, self.weight_index])
 
         self.fig.suptitle('Projected data', fontdict=self.Palette.title_font, fontsize=24)
+
     
     def update(self, proj: np.ndarray | None = None):
         if proj is not None:
             self.curr_proj = proj
+
         self.ax.cla()
         proj_points = self.curr_proj @ self.CALC.get_data()
         self.curr_collection = self.ax.scatter(proj_points[0], proj_points[1], marker = ".")
         self.curr_collection.set_facecolor(self.point_colours)
         
         #self.ax.scatter(self.curr_proj.black_points[0], self.curr_proj.black_points[1], c = [self.Palette.points_colour], marker = ".")
-        ellipses = self.CALC.get_proj_ellipses(self.curr_proj, [m for m in self.M_DISTS if self.m_dists_using[m]])
+        ellipses = self.CALC.get_proj_ellipses(self.curr_proj, [self.CONFS[m] for m in self.CONFS if self.m_dists_using[m]])
         for i, ellipse in enumerate(ellipses):
             self.ax.plot(ellipse[0], ellipse[1], c=self.Palette.ellipse_colours[i], linewidth = 2)
 
+        i = 0
+        self.attr_labels = []
         for proj_axis in self.curr_proj.T:
             self.ax.plot([0, proj_axis[0]*self.limit*0.5], [0, proj_axis[1]*self.limit*0.5], c = self.Palette.axes_colour, linewidth = 1)
+            new_label = self.ax.text(proj_axis[0]*self.limit*0.5, proj_axis[1]*self.limit*0.5, "e" + str(i))
+            new_label.set_picker(True)
+            self.attr_labels.append(new_label)
+            i += 1
         
         self.ax.set_xbound(-self.limit, self.limit)
         self.ax.set_ybound(-self.limit, self.limit)
 
         self.fig.canvas.draw_idle()
+
+    def pick_axes(self, event):
+        if event.mouseevent.dblclick:
+            ind = int(event.artist.get_text()[1:])
+            u, v = self.curr_proj[0], self.curr_proj[1]
+            u[ind] = v[ind] = 0
+            try:
+                u, v = self.CALC.orthonormalise(u, v)
+            except RuntimeWarning:
+                pass
+            else:
+                self.curr_proj = np.vstack([u, v])
+                self.update()
+
 
     def change_factor(self, label):
         radio_labels = {"Inner": 0, "None": 1, "Outer": 2}
@@ -253,8 +283,8 @@ class InteractiveGraph:
             self.update(P)
 
     def change_cutoff(self, val = None):
-        proj = self.PREPLOTS[int(self.cutoff_slider.val*self.PRECISION/self.MAX_CUTOFF), self.weight_index]
-        self.points_ind = self.CALC.partition_data(self.cutoff_slider.val)
+        proj = self.PREPLOTS[int(self.cutoff_slider.val*self.PRECISION/self.MAX_SD), self.weight_index]
+        self.points_ind = int((2*norm.cdf(self.cutoff_slider.val) - 1)*len(self.CALC))
         self.point_colours[self.points_ind:] = self.Palette.points_colour
         self.point_colours[:self.points_ind] = self.Palette.redundant_points_colour
         self.update(proj)
@@ -284,7 +314,7 @@ class InteractiveGraph:
             self.fig.canvas.draw_idle()
 
     def show_ellipse(self, label):
-        self.m_dists_using[self.CONFS[label]] = not self.m_dists_using[self.CONFS[label]]
+        self.m_dists_using[label] = not self.m_dists_using[label]
         self.update()
 
 
