@@ -49,6 +49,9 @@ class Calculator:
         """Returns mean of data, dim length array"""
         return self.__mean
     
+    def get_attrs(self) -> np.ndarray:
+        return self.__attribute_names
+
     def get_random_plane(self) -> np.ndarray:
         u = np.random.rand(self.__dim) - 0.5
         v = np.random.rand(self.__dim) - 0.5
@@ -87,7 +90,13 @@ class Calculator:
         """
         # gather raw data
         if type(data) == str:
-            unsorted_data = np.loadtxt(fname = data, dtype=float, delimiter=",", skiprows=0).T
+            try:
+                unsorted_data = np.loadtxt(fname = data, dtype=float, delimiter=",", skiprows=0).T
+            except ValueError:
+                unsorted_data = np.loadtxt(fname = data, dtype=float, delimiter=",", skiprows=1).T
+                self.__attribute_names = np.loadtxt(fname = data, dtype=str, delimiter=",", skiprows=0, max_rows=1)
+            else:
+                self.__attribute_names = np.array(["e" + str(i) for i in range(unsorted_data.shape[0])])
         else:
             unsorted_data = data
         

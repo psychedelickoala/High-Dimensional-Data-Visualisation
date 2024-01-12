@@ -1,9 +1,11 @@
 import matplotlib.pyplot as plt
+import sys
 from tqdm import tqdm
 import numpy as np
 from scipy.stats import norm, chi2
 from calculator import Calculator
 from matplotlib.widgets import Button, Slider, CheckButtons, LassoSelector, RadioButtons
+from matplotlib.patches import BoxStyle
 from matplotlib.path import Path
 import pickle as pl
 import warnings
@@ -126,13 +128,13 @@ class InteractiveGraph:
             for i in tqdm(range(self.PRECISION), desc = "Finding projections..."):
                 sd = i*self.MAX_SD/self.PRECISION
 
-                u, v = self.CALC.optimise_plane(sd=sd, factor = self.FACTORS[0], from_plane=P_in)
-                P_in = np.vstack([u, v])
+                #u, v = self.CALC.optimise_plane(sd=sd, factor = self.FACTORS[0], from_plane=P_in)
+                #P_in = np.vstack([u, v])
                 u, v = self.CALC.optimise_plane(sd=sd, factor = self.FACTORS[1], from_plane=P_mid)
                 P_mid = np.vstack([u, v])
-                u, v = self.CALC.optimise_plane(sd=sd, factor = self.FACTORS[2], from_plane=P_out)
-                P_out = np.vstack([u, v])
-                row = np.stack([P_in, P_mid, P_out])[np.newaxis]
+                #u, v = self.CALC.optimise_plane(sd=sd, factor = self.FACTORS[2], from_plane=P_out)
+                #P_out = np.vstack([u, v])
+                row = np.stack([P_mid])[np.newaxis]
                 if i == 0:
                     self.PREPLOTS = row
                 else:
@@ -225,7 +227,7 @@ class InteractiveGraph:
         self.factor_radio.on_clicked(self.change_factor)
 
         self.fig.canvas.mpl_connect('pick_event', self.pick_axes)
-        self.update(self.PREPLOTS[self.points_ind, self.weight_index])
+        self.update(self.PREPLOTS[self.points_ind, 0])
 
         self.fig.suptitle('Projected data', fontdict=self.Palette.title_font, fontsize=24)
 
@@ -248,8 +250,9 @@ class InteractiveGraph:
         self.attr_labels = []
         for proj_axis in self.curr_proj.T:
             self.ax.plot([0, proj_axis[0]*self.limit*0.5], [0, proj_axis[1]*self.limit*0.5], c = self.Palette.axes_colour, linewidth = 1)
-            new_label = self.ax.text(proj_axis[0]*self.limit*0.5, proj_axis[1]*self.limit*0.5, "e" + str(i))
+            new_label = self.ax.text(proj_axis[0]*self.limit*0.5, proj_axis[1]*self.limit*0.5, self.CALC.get_attrs()[i])
             new_label.set_picker(True)
+            new_label.set_bbox(dict(facecolor=self.Palette.graph_bg, alpha=0.7, linewidth=0, boxstyle=BoxStyle.Round(pad=0.05)))
             self.attr_labels.append(new_label)
             i += 1
         
@@ -260,9 +263,10 @@ class InteractiveGraph:
 
     def pick_axes(self, event):
         if event.mouseevent.dblclick:
-            ind = int(event.artist.get_text()[1:])
+            ind = np.where(self.CALC.get_attrs() == event.artist.get_text())[0][0]
             u, v = self.curr_proj[0], self.curr_proj[1]
-            u[ind] = v[ind] = 0
+            u[ind] *= 0
+            v[ind] *= 0
             try:
                 u, v = self.CALC.orthonormalise(u, v)
             except RuntimeWarning:
@@ -271,32 +275,54 @@ class InteractiveGraph:
                 self.curr_proj = np.vstack([u, v])
                 self.update()
         else:
-            self.dragged = int(event.artist.get_text()[1:])
+            self.dragged = np.where(self.CALC.get_attrs() == event.artist.get_text())[0][0]
             self.drag_id = self.fig.canvas.mpl_connect("motion_notify_event", self.drag_axes)
             self.release_id = self.fig.canvas.mpl_connect('button_release_event', self.stop_dragging)
             
     def drag_axes(self, event):
         u, v = self.curr_proj[0], self.curr_proj[1]
         '''
+        pos = np.array([event.xdata*2/self.limit, event.ydata*2/self.limit])
+        precision = 0
         a = np.delete(u, self.dragged)
         b = np.delete(v, self.dragged)
-        A = event.xdata*2/self.limit if np.linalg.norm(event.xdata*2/self.limit) < 1 else (event.xdata*2/self.limit)/np.linalg.norm(event.xdata*2/self.limit)
-        B = event.ydata*2/self.limit if np.linalg.norm(event.ydata*2/self.limit) < 1 else (event.ydata*2/self.limit)/np.linalg.norm(event.ydata*2/self.limit)
+        A = pos[0] if (np.linalg.norm(pos) < (1-precision) and not self.dim2) else (1 - precision)*(pos[0])/np.linalg.norm(pos)
+        B = pos[1] if (np.linalg.norm(pos) < (1-precision) and not self.dim2) else (1 - precision)*(pos[1])/np.linalg.norm(pos)
 
         au = a/np.linalg.norm(a)
         bu = b/np.linalg.norm(b)
-        m = au + bu
-        m /= np.linalg.norm(m)
+        m = (au + bu)
+        try:
+            m /= np.linalg.norm(m)
+            c2 = -A*B/np.sqrt((1 - A**2)*(1 - B**2))
+            c, s = np.sqrt((1 + c2)/2), np.sqrt((1 - c2)/2)
 
-        c2 = -A*B/np.sqrt((1 - A**2)*(1 - B**2))
-        c, s = np.sqrt((1 + c2)/2), np.sqrt((1 - c2)/2)
+            ap = (au - np.dot(au, m)*m)
+            ap /= np.linalg.norm(ap)
+            bp = (bu - np.dot(bu, m)*m)
+            bp /= np.linalg.norm(bp)
 
-        ap = (au - np.dot(au, m)*m)
-        ap /= np.linalg.norm(ap)
-        bp = (bu - np.dot(bu, m)*m)
-        bp /= np.linalg.norm(bp)
+            au, bu = c*m + s*ap, c*m + s*bp
+        
+        except RuntimeWarning: # all other vectors in a line
+            self.dim2 = True
+            new_line_proj = np.array([[B**2, -A*B], [-A*B, A**2]])
+            to_proj = np.vstack([a, b])
+            new_vecs = new_line_proj @ to_proj
+            print(new_vecs[0], new_vecs[1])
+            try:
+                au = new_vecs[0]/np.linalg.norm(new_vecs[0])
+                bu = new_vecs[1]/np.linalg.norm(new_vecs[1])
+            except RuntimeWarning:
+                if np.abs(A) == 1:
+                    au = new_vecs[0]
+                    bu = new_vecs[1]/np.linalg.norm(new_vecs[1])
+                elif np.abs(B) == 1:
+                    au = new_vecs[0]/np.linalg.norm(new_vecs[0])
+                    bu = new_vecs[1]
 
-        au, bu = c*m + s*ap, c*m + s*bp
+
+        
         a, b = au*np.sqrt(1-A**2), bu*np.sqrt(1-B**2)
         u = np.insert(a, self.dragged, A)
         v = np.insert(b, self.dragged, B)
@@ -306,6 +332,7 @@ class InteractiveGraph:
         u[self.dragged] = event.xdata*2/self.limit
         v[self.dragged] = event.ydata*2/self.limit
         u, v = self.CALC.orthonormalise(u, v)
+        
         self.update(np.vstack([u, v]))
 
     def stop_dragging(self, event):
@@ -326,7 +353,8 @@ class InteractiveGraph:
             self.update(P)
 
     def change_cutoff(self, val = None):
-        proj = self.PREPLOTS[int(self.cutoff_slider.val*self.PRECISION/self.MAX_SD), self.weight_index]
+        proj = self.PREPLOTS[int(self.cutoff_slider.val*self.PRECISION/self.MAX_SD), 0]
+        #self.factor_radio.set_active(1)
         self.points_ind = int((2*norm.cdf(self.cutoff_slider.val) - 1)*len(self.CALC))
         self.point_colours[self.points_ind:] = self.Palette.points_colour
         self.point_colours[:self.points_ind] = self.Palette.redundant_points_colour
