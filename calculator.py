@@ -1,5 +1,6 @@
 import numpy as np
 import csv
+from scipy.stats import norm
 import matplotlib.pyplot as plt
 
 
@@ -33,6 +34,9 @@ class Calculator:
         """Returns the number of dimensions"""
         return len(self.__mahal_dists)
     
+    def get_dim(self) -> int:
+        return self.__dim
+
     def get_covariance(self) -> np.ndarray[np.ndarray[float]]:
         """Returns covariance matrix, dim x dim array"""
         return self.__covariance
@@ -45,10 +49,13 @@ class Calculator:
         """Returns mean of data, dim length array"""
         return self.__mean
     
+    def get_attrs(self) -> np.ndarray:
+        return self.__attribute_names
+
     def get_random_plane(self) -> np.ndarray:
         u = np.random.rand(self.__dim) - 0.5
         v = np.random.rand(self.__dim) - 0.5
-        u, v = self.__orthonormalise(u, v)
+        u, v = self.orthonormalise(u, v)
         return np.vstack([u, v])
     
     def get_max_cutoff(self) -> float:
@@ -56,6 +63,10 @@ class Calculator:
     
     def get_max_norm(self) -> float:
         return max(np.linalg.norm(self.__data, axis = 0))
+
+    def get_confidence_dist(self, conf: float) -> np.ndarray:
+        return self.__mahal_dists[int(len(self)*conf)]
+
 
     def partition_data(self, cutoff: float) -> tuple[np.ndarray]:
         ind = np.searchsorted(self.__mahal_dists, cutoff)
@@ -79,7 +90,13 @@ class Calculator:
         """
         # gather raw data
         if type(data) == str:
-            unsorted_data = np.loadtxt(fname = data, dtype=float, delimiter=",", skiprows=0).T
+            try:
+                unsorted_data = np.loadtxt(fname = data, dtype=float, delimiter=",", skiprows=0).T
+            except ValueError:
+                unsorted_data = np.loadtxt(fname = data, dtype=float, delimiter=",", skiprows=1).T
+                self.__attribute_names = np.loadtxt(fname = data, dtype=str, delimiter=",", skiprows=0, max_rows=1)
+            else:
+                self.__attribute_names = np.array(["e" + str(i) for i in range(unsorted_data.shape[0])])
         else:
             unsorted_data = data
         
@@ -123,7 +140,7 @@ class Calculator:
         return u/np.linalg.norm(u)
     
     @staticmethod
-    def __orthonormalise(u: np.ndarray, v: np.ndarray) -> tuple[np.ndarray]:
+    def orthonormalise(u: np.ndarray, v: np.ndarray) -> tuple[np.ndarray]:
         """
         Orthonormalises two vectors u and v, shifting them both evenly.
 
@@ -143,7 +160,7 @@ class Calculator:
         M = P @ self.__covariance @ P.T
         T = np.linalg.cholesky(M)
         proj_mean = P @ self.__mean
-        return [(np.sqrt(dist) * T @ self.__circle) + proj_mean for dist in m_dists]
+        return [(dist * T @ self.__circle) + proj_mean for dist in m_dists]
 
     
     def plot_on_plane(self, plane: tuple[np.ndarray] | str = "optimised 0", m_dists: list[float] = [1, 2, 3], show_axes: bool = True,\
@@ -173,10 +190,10 @@ class Calculator:
         elif plane == "random":
             u = np.random.rand(self.__dim) - 0.5
             v = np.random.rand(self.__dim) - 0.5
-            u, v = self.__orthonormalise(u, v)
+            u, v = self.orthonormalise(u, v)
             P = np.vstack([u, v])
         else:
-            u, v = self.__orthonormalise(plane[0], plane[1])
+            u, v = self.orthonormalise(plane[0], plane[1])
             P = np.vstack([u, v])
 
         # get ellipses
@@ -238,7 +255,7 @@ class Calculator:
             for _ in range(across):
                 u = np.random.rand(self.__dim) - 0.5
                 v = np.random.rand(self.__dim) - 0.5
-                u, v = self.__orthonormalise(u, v)
+                u, v = self.orthonormalise(u, v)
                 print(f"random dist = {self.total_m_dist(u, v, self.__data - self.__mean, mod)}")
                 P = np.vstack([u, v])
                 row.append(P)
@@ -349,10 +366,10 @@ class Calculator:
         u, D, Vh = np.linalg.svd(T.T, full_matrices=False)
         K = Vh[:2]
         P = K @ np.linalg.inv(B)
-        return self.__orthonormalise(P[0], P[1])
+        return self.orthonormalise(P[0], P[1])
 
-    def optimise_plane(self, cutoff: float | None = None, points: np.ndarray | None = None, factor: float | None = None, from_plane: np.ndarray | None = None, \
-        step: float = 0.01, tol: float = 0.00001, verbose: bool = False) -> tuple[np.ndarray]:
+    def optimise_plane(self, cutoff: float | None = None, sd: float = None, points: np.ndarray | None = None, factor: float | None = None, \
+        from_plane: np.ndarray | None = None, step: float = 0.01, tol: float = 0.00001, verbose: bool = False) -> tuple[np.ndarray]:
         """
         Numerically searches for the plane that will maximise total_m_dist.
 
@@ -364,9 +381,14 @@ class Calculator:
 
         :return: tuple of arrays; orthonormal vectors spanning optimal plane.
         """
+
         if cutoff is None:
             if points is None:
-                W = self.__data - self.__mean
+                if sd is None:
+                    W = self.__data - self.__mean
+                else:
+                    conf = 2*norm.cdf(sd) - 1
+                    W = self.__data[:, int(conf*len(self)):] - self.__mean
             else:
                 W = points - self.__mean
         else:
@@ -387,7 +409,7 @@ class Calculator:
             if verbose:
                 print(f"new total dist: {d}. increment: {d - prev_d}")
             du, dv = self.__d_total_m_dist(u, v, W, mod)
-            u, v = self.__orthonormalise(u + step*du, v + step*dv)
+            u, v = self.orthonormalise(u + step*du, v + step*dv)
             prev_d = d
             d = self.total_m_dist(u, v, W, mod)
         if verbose:
