@@ -276,12 +276,13 @@ class InteractiveGraph:
                 self.update()
         else:
             self.dragged = np.where(self.CALC.get_attrs() == event.artist.get_text())[0][0]
+            self.dim2 = False
             self.drag_id = self.fig.canvas.mpl_connect("motion_notify_event", self.drag_axes)
             self.release_id = self.fig.canvas.mpl_connect('button_release_event', self.stop_dragging)
             
     def drag_axes(self, event):
         u, v = self.curr_proj[0], self.curr_proj[1]
-        '''
+
         pos = np.array([event.xdata*2/self.limit, event.ydata*2/self.limit])
         precision = 0
         a = np.delete(u, self.dragged)
@@ -322,7 +323,7 @@ class InteractiveGraph:
                     bu = new_vecs[1]
 
 
-        
+        '''
         a, b = au*np.sqrt(1-A**2), bu*np.sqrt(1-B**2)
         u = np.insert(a, self.dragged, A)
         v = np.insert(b, self.dragged, B)
