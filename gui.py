@@ -277,6 +277,32 @@ class InteractiveGraph:
             
     def drag_axes(self, event):
         u, v = self.curr_proj[0], self.curr_proj[1]
+        '''
+        a = np.delete(u, self.dragged)
+        b = np.delete(v, self.dragged)
+        A = event.xdata*2/self.limit if np.linalg.norm(event.xdata*2/self.limit) < 1 else (event.xdata*2/self.limit)/np.linalg.norm(event.xdata*2/self.limit)
+        B = event.ydata*2/self.limit if np.linalg.norm(event.ydata*2/self.limit) < 1 else (event.ydata*2/self.limit)/np.linalg.norm(event.ydata*2/self.limit)
+
+        au = a/np.linalg.norm(a)
+        bu = b/np.linalg.norm(b)
+        m = au + bu
+        m /= np.linalg.norm(m)
+
+        c2 = -A*B/np.sqrt((1 - A**2)*(1 - B**2))
+        c, s = np.sqrt((1 + c2)/2), np.sqrt((1 - c2)/2)
+
+        ap = (au - np.dot(au, m)*m)
+        ap /= np.linalg.norm(ap)
+        bp = (bu - np.dot(bu, m)*m)
+        bp /= np.linalg.norm(bp)
+
+        au, bu = c*m + s*ap, c*m + s*bp
+        a, b = au*np.sqrt(1-A**2), bu*np.sqrt(1-B**2)
+        u = np.insert(a, self.dragged, A)
+        v = np.insert(b, self.dragged, B)
+        '''
+
+
         u[self.dragged] = event.xdata*2/self.limit
         v[self.dragged] = event.ydata*2/self.limit
         u, v = self.CALC.orthonormalise(u, v)
