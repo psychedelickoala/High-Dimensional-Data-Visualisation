@@ -1,6 +1,5 @@
 import numpy as np
-import csv
-from scipy.stats import norm
+from scipy.stats import norm, chi2
 import matplotlib.pyplot as plt
 
 
@@ -14,11 +13,11 @@ class Calculator:
     :attribute __data: dim x num_points array; each column is a datapoint, sorted in order of increasing Mahalanobis distance.
     :attribute __dim: integer greater than one; number of dimensions.
     :attribute __ellipsoid: dim x dim array; inverse of covariance matrix hence matrix of ellipse of best fit.
-    :attribute __mahal_dists: num_points length array; sorted Mahalanobis distances of each data point from the mean.
+    :attribute __sds: num_points length array; sorted standard deeviations of each data point from the mean.
     :attribute __mean: dim length array; centroid of the data set.
     """
 
-    def __init__(self, data: str | np.ndarray, ellipse_res: int = 60) -> None:
+    def __init__(self, data: str | np.ndarray, ellipse_res: int = 60, cov = None, cov_mean = None) -> None:
         """
         Initialises calculator.
         Reads and sorts data and constructs circle. These can be reset later.
@@ -27,12 +26,12 @@ class Calculator:
         :optional param ellipse_res: integer number of points to draw of the projected ellipses.
         """
 
-        self.set_data(data)
+        self.set_data(data, cov, cov_mean)
         self.set_ellipse_res(ellipse_res)
 
     def __len__(self) -> int:
         """Returns the number of dimensions"""
-        return len(self.__mahal_dists)
+        return len(self.__sds)
     
     def get_dim(self) -> int:
         return self.__dim
@@ -58,31 +57,30 @@ class Calculator:
         u, v = self.orthonormalise(u, v)
         return np.vstack([u, v])
     
-    def get_max_cutoff(self) -> float:
-        return self.__mahal_dists[-2]
+    def get_max_sds(self) -> float:
+        return self.__sds[-2]
     
     def get_max_norm(self) -> float:
         return max(np.linalg.norm(self.__data, axis = 0))
 
     def get_confidence_dist(self, conf: float) -> np.ndarray:
-        return self.__mahal_dists[int(len(self)*conf)]
+        return self.__sds[int(len(self)*conf)] # delete func ?
 
-
-    def partition_data(self, cutoff: float) -> tuple[np.ndarray]:
-        ind = np.searchsorted(self.__mahal_dists, cutoff)
+    def partition_data(self, sd: float) -> tuple[np.ndarray]:
+        ind = np.searchsorted(self.__sds, sd)
         return ind
 
-    def get_outliers(self, cutoff: float) -> np.ndarray:
+    def get_outliers(self, sd: float) -> np.ndarray:
         """
         Gets data points with a certain Mahalanobis distance from the mean.
 
         :param cutoff: float representing the minimum Mahalanobis distance that constitutes an 'outlier'
         :return: dim x num_outliers array of points past this Mahalanobis distance.
         """
-        ind = np.searchsorted(self.__mahal_dists, cutoff)
+        ind = np.searchsorted(self.__sds, sd)
         return self.__data[:, ind:]
 
-    def set_data(self, data: str | np.ndarray) -> None:
+    def set_data(self, data: str | np.ndarray, cov, cov_mean) -> None:
         """
         Set data for calculator to analyse.
 
@@ -102,23 +100,32 @@ class Calculator:
         
         # calculate mean (can add/subtract from matrices)
         self.__mean = np.mean(unsorted_data, axis = 1, keepdims=True)
+        self.__cov_mean = cov_mean[:, np.newaxis] if cov_mean is not None else self.__mean
+        #self.__cov_mean = np.broadcast_to(cov_mean, ()) if cov_mean is not None else self.__mean
         
         #sorting the data based on increasing mahalanobis distance from mean
-        temp_covariance = np.cov(unsorted_data)
+        temp_covariance = np.cov(unsorted_data) if cov is None else cov
         temp_basis = np.linalg.cholesky(temp_covariance)
 
-        t_data = np.linalg.inv(temp_basis) @ (unsorted_data - self.__mean)
+        t_data = np.linalg.inv(temp_basis) @ (unsorted_data - self.__cov_mean)
 
         indexlist = np.argsort(np.linalg.norm(t_data, axis=0))
         sorted_t_data = t_data[:, indexlist]
 
-        self.__mahal_dists = np.linalg.norm(sorted_t_data, axis=0)
-        self.__data = (temp_basis @ sorted_t_data) + self.__mean
+
+        self.__data = (temp_basis @ sorted_t_data) + self.__cov_mean
         
         # set covariance, dimensions based on SORTED data
         self.__dim = self.__data.shape[0]
-        self.__covariance = np.cov(self.__data)
+        m_dists = np.linalg.norm(sorted_t_data, axis=0)
+        self.__sds = norm.isf((chi2.sf(m_dists**2, self.__dim))/2)
+        for sd in self.__sds:
+            print(sd)
 
+
+        self.__covariance = np.cov(self.__data) if cov is None else cov
+
+        #self.__cov_mean = cov_mean
         # ellipsoid matrix
         self.__ellipsoid: np.ndarray = np.linalg.inv(self.__covariance)
 
@@ -159,7 +166,7 @@ class Calculator:
     def get_proj_ellipses(self, P: np.ndarray, m_dists: list[float] = [1, 2, 3]) -> list[np.ndarray]:
         M = P @ self.__covariance @ P.T
         T = np.linalg.cholesky(M)
-        proj_mean = P @ self.__mean
+        proj_mean = P @ self.__cov_mean
         return [(dist * T @ self.__circle) + proj_mean for dist in m_dists]
 
     
@@ -199,7 +206,7 @@ class Calculator:
         # get ellipses
         M = P @ self.__covariance @ P.T
         T = np.linalg.cholesky(M)
-        proj_mean = P @ self.__mean
+        proj_mean = P @ self.__cov_mean
         ellipses = [(dist * T @ self.__circle) + proj_mean for dist in m_dists]
 
         # return points
@@ -214,7 +221,7 @@ class Calculator:
         # plot points
         proj_data = P @ self.__data
         if cutoff is not None:
-            ind = np.searchsorted(self.__mahal_dists, cutoff)
+            ind = np.searchsorted(self.__sds, cutoff)
             plt.scatter(proj_data[0, :ind], proj_data[1, :ind], c = "#808080", marker = ".")
             plt.scatter(proj_data[0, ind:], proj_data[1, ind:], c = "#000000", marker = ".")
         else:
@@ -296,7 +303,7 @@ class Calculator:
 
                 # plot points
                 proj_data = P @ self.__data
-                ind = np.searchsorted(self.__mahal_dists, this_cutoff)
+                ind = np.searchsorted(self.__sds, this_cutoff)
                 axs[j, i].scatter(proj_data[0][:ind], proj_data[1][:ind], c = "#aaaaaa", marker = ".")
                 axs[j, i].scatter(proj_data[0][ind:], proj_data[1][ind:], c = "#000000", marker = ".")
 
@@ -368,7 +375,7 @@ class Calculator:
         P = K @ np.linalg.inv(B)
         return self.orthonormalise(P[0], P[1])
 
-    def optimise_plane(self, cutoff: float | None = None, sd: float = None, points: np.ndarray | None = None, factor: float | None = None, \
+    def optimise_plane(self, sd: float = None, points: np.ndarray | None = None, factor: float | None = None, \
         from_plane: np.ndarray | None = None, step: float = 0.01, tol: float = 0.00001, verbose: bool = False) -> tuple[np.ndarray]:
         """
         Numerically searches for the plane that will maximise total_m_dist.
@@ -382,17 +389,15 @@ class Calculator:
         :return: tuple of arrays; orthonormal vectors spanning optimal plane.
         """
 
-        if cutoff is None:
-            if points is None:
-                if sd is None:
-                    W = self.__data - self.__mean
-                else:
-                    conf = 2*norm.cdf(sd) - 1
-                    W = self.__data[:, int(conf*len(self)):] - self.__mean
+   
+        if points is None:
+            if sd is None:
+                W = self.__data - self.__cov_mean
             else:
-                W = points - self.__mean
+                W = self.get_outliers(sd) - self.__cov_mean
         else:
-            W = self.get_outliers(cutoff) - self.__mean
+            W = points - self.__cov_mean
+
         if from_plane is None:
             u, v = self.__optimise_slice_plane(W)
         else:

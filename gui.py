@@ -1,5 +1,4 @@
 import matplotlib.pyplot as plt
-import sys
 from tqdm import tqdm
 import numpy as np
 from scipy.stats import norm, chi2
@@ -51,8 +50,7 @@ class InteractiveGraph:
 
     # constant
     
-    MAX_CUTOFF: float = None
-    MAX_SD: float = 3.5
+    MAX_SD: float = None
     PRECISION: int = None
     PREPLOTS: list[np.ndarray] = None
     CALC: Calculator = None
@@ -69,12 +67,12 @@ class InteractiveGraph:
     weight_index = None
     dragged = None
     m_dists_using = dict = {
-        "68.3%": True,
-        "90.0%": True,
-        "95.4%": True,
-        "99.0%": False,
-        "99.73%": False,
-        "99.99%": False
+        "1σ": False,
+        "2σ": False,
+        "3σ": True,
+        "4σ": False,
+        "5σ": False,
+        "6σ": False
     }
 
     # widgets
@@ -91,21 +89,35 @@ class InteractiveGraph:
         self.Palette()
         if calc is None:
             readfile = input("Enter path to data csv file: ")
-            self.CALC = Calculator(readfile)
+            if readfile == "1":
+                readfile = "samples/p5pexample/np.csv"
+                cov = np.loadtxt('samples/p5pexample/cov_mat.csv', dtype=float, delimiter=",")
+                mean = np.loadtxt('samples/p5pexample/centre_of_ellipses.csv', dtype=float, delimiter=",")
+            else:
+                manual_cov = input("Would you like to specify a covariance matrix? Y/N: ")
+                cov = mean = None
+                if manual_cov == 'Y':
+                    cov_file = input("Enter path to covariance matrix file: ")
+                    cov = np.loadtxt(cov_file, dtype=float, delimiter=",")
+                    manual_mean = input("Would you like to specify an ellipsoid mean? Y/N: ")
+                    if manual_mean == "Y":
+                        mean_file = input("Enter path to ellipsoid mean file: ")
+                        mean = np.loadtxt(mean_file, dtype=float, delimiter=",")
+            self.CALC = Calculator(readfile, cov=cov, cov_mean = mean)
         else:
             self.CALC = calc
         
-        self.MAX_CUTOFF = self.CALC.get_max_cutoff()*0.95
         self.PRECISION = preplots if type(preplots) is int else len(preplots)
         self.CONFS: dict = {
-            "68.3%": np.sqrt(chi2.ppf(0.683, self.CALC.get_dim())),
-            "90.0%": np.sqrt(chi2.ppf(0.9, self.CALC.get_dim())),
-            "95.4%": np.sqrt(chi2.ppf(0.954, self.CALC.get_dim())),
-            "99.0%": np.sqrt(chi2.ppf(0.99, self.CALC.get_dim())),
-            "99.73%": np.sqrt(chi2.ppf(0.9973, self.CALC.get_dim())),
-            "99.99%": np.sqrt(chi2.ppf(0.9999, self.CALC.get_dim()))
+            "1σ": np.sqrt(chi2.ppf((2*norm.cdf(1) - 1), self.CALC.get_dim())),
+            "2σ": np.sqrt(chi2.ppf((2*norm.cdf(2) - 1), self.CALC.get_dim())),
+            "3σ": np.sqrt(chi2.ppf((2*norm.cdf(3) - 1), self.CALC.get_dim())),
+            "4σ": np.sqrt(chi2.ppf((2*norm.cdf(4) - 1), self.CALC.get_dim())),
+            "5σ": np.sqrt(chi2.ppf((2*norm.cdf(5) - 1), self.CALC.get_dim())),
+            "6σ": np.sqrt(chi2.ppf((2*norm.cdf(6) - 1), self.CALC.get_dim()))
         }
         self.M_DISTS: list[int] = self.CONFS.values()
+        self.MAX_SD = self.CALC.get_max_sds()*0.99
         self.point_colours = np.vstack([self.Palette.points_colour]*len(self.CALC))
         self.axes_zeroed = [False]*self.CALC.get_dim()
         self.weight_index = 1
@@ -282,13 +294,18 @@ class InteractiveGraph:
             
     def drag_axes(self, event):
         u, v = self.curr_proj[0], self.curr_proj[1]
+        nonzeros = 0
+        for row in self.curr_proj.T:
+            if not np.allclose(row, np.zeros(2)):
+                nonzeros += 1
 
+        dim2 = (nonzeros <= 2)
         pos = np.array([event.xdata*2/self.limit, event.ydata*2/self.limit])
-        precision = 0
+        precision = 0.00001
         a = np.delete(u, self.dragged)
         b = np.delete(v, self.dragged)
-        A = pos[0] if (np.linalg.norm(pos) < (1-precision) and not self.dim2) else (1 - precision)*(pos[0])/np.linalg.norm(pos)
-        B = pos[1] if (np.linalg.norm(pos) < (1-precision) and not self.dim2) else (1 - precision)*(pos[1])/np.linalg.norm(pos)
+        A = pos[0] if (np.linalg.norm(pos) < (1-precision) and not dim2) else (1 - precision)*(pos[0])/np.linalg.norm(pos)
+        B = pos[1] if (np.linalg.norm(pos) < (1-precision) and not dim2) else (1 - precision)*(pos[1])/np.linalg.norm(pos)
 
         au = a/np.linalg.norm(a)
         bu = b/np.linalg.norm(b)
@@ -306,11 +323,10 @@ class InteractiveGraph:
             au, bu = c*m + s*ap, c*m + s*bp
         
         except RuntimeWarning: # all other vectors in a line
-            self.dim2 = True
             new_line_proj = np.array([[B**2, -A*B], [-A*B, A**2]])
             to_proj = np.vstack([a, b])
             new_vecs = new_line_proj @ to_proj
-            print(new_vecs[0], new_vecs[1])
+            #print(new_vecs[0], new_vecs[1])
             try:
                 au = new_vecs[0]/np.linalg.norm(new_vecs[0])
                 bu = new_vecs[1]/np.linalg.norm(new_vecs[1])
@@ -345,18 +361,16 @@ class InteractiveGraph:
     def change_factor(self, label):
         radio_labels = {"Inner": 0, "None": 1, "Outer": 2}
         self.weight_index = radio_labels[label]
-        if type(self.points_ind) is not np.ndarray:
-            self.change_cutoff()
-        else:
-            points = self.CALC.get_data()[:, self.points_ind]
-            u, v = self.CALC.optimise_plane(points=points, from_plane=self.curr_proj, factor=self.FACTORS[self.weight_index])
-            P = np.vstack([u, v])
-            self.update(P)
+
+        points = self.CALC.get_data()[:, self.points_ind]
+        u, v = self.CALC.optimise_plane(points=points, from_plane=self.curr_proj, factor=self.FACTORS[self.weight_index])
+        P = np.vstack([u, v])
+        self.update(P)
 
     def change_cutoff(self, val = None):
         proj = self.PREPLOTS[int(self.cutoff_slider.val*self.PRECISION/self.MAX_SD), 0]
-        #self.factor_radio.set_active(1)
-        self.points_ind = int((2*norm.cdf(self.cutoff_slider.val) - 1)*len(self.CALC))
+        self.factor_radio.set_active(1)
+        self.points_ind = self.CALC.partition_data(self.cutoff_slider.val)
         self.point_colours[self.points_ind:] = self.Palette.points_colour
         self.point_colours[:self.points_ind] = self.Palette.redundant_points_colour
         self.update(proj)
