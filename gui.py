@@ -33,6 +33,8 @@ class InteractiveGraph:
         redundant_points_colour = graph_bg * 0.9
         axes_colour = black
 
+        cluster_colours = np.outer(np.array([0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5]), dark_blue)
+
         title_font = {"color": off_white, "family": "serif"}
         subtitle_font = {"color": off_white, "family": "serif", "size": 14}
 
@@ -46,7 +48,6 @@ class InteractiveGraph:
             ax.spines['top'].set_color(cls.bg_colour)
             ax.spines['right'].set_color(cls.bg_colour)
             ax.spines['left'].set_color(cls.bg_colour)
-
 
     # constant
     
@@ -66,6 +67,7 @@ class InteractiveGraph:
     colours = None
     weight_index = None
     dragged = None
+    clusters = None
     m_dists_using = dict = {
         "1σ": False,
         "2σ": False,
@@ -85,7 +87,7 @@ class InteractiveGraph:
     axrandbutton: plt.Axes = None
     rand_button: Button =  None
 
-    def __init__(self, preplots: list[np.ndarray] | int = 200, calc: Calculator = None) -> None:
+    def __init__(self, preplots: list[np.ndarray] | int = 20, calc: Calculator = None) -> None:
         self.Palette()
         if calc is None:
             readfile = input("Enter path to data csv file: ")
@@ -106,6 +108,8 @@ class InteractiveGraph:
             self.CALC = Calculator(readfile, cov=cov, cov_mean = mean)
         else:
             self.CALC = calc
+
+       # print(len(self.CALC.get_clusters(0)))
         
         self.PRECISION = preplots if type(preplots) is int else len(preplots)
         self.CONFS: dict = {
@@ -127,16 +131,19 @@ class InteractiveGraph:
         self.fig = plt.figure(facecolor=self.Palette.bg_colour)
         self.ax = self.fig.add_axes([0.35, 0.1, 0.6, 0.8], facecolor = self.Palette.graph_bg)
         self.axslider = self.fig.add_axes([0.24, 0.1, 0.02, 0.8], facecolor=self.Palette.slider_bg)
-        self.axcheckbox = self.fig.add_axes([0.1, 0.55, 0.1, 0.35], facecolor=self.Palette.slider_bg)
-        self.axrandbutton = self.fig.add_axes([0.1, 0.45, 0.1, 0.05])
-        self.axlassobutton = self.fig.add_axes([0.1, 0.35, 0.1, 0.05])
-        self.axradio = self.fig.add_axes([0.1, 0.1, 0.1, 0.15], facecolor = self.Palette.slider_bg)
+        self.axcheckbox = self.fig.add_axes([0.1, 0.65, 0.1, 0.25], facecolor=self.Palette.slider_bg)
+        self.axrandbutton = self.fig.add_axes([0.1, 0.58, 0.1, 0.05])
+        self.axlassobutton = self.fig.add_axes([0.1, 0.51, 0.1, 0.05])
+        self.axclusterbutton = self.fig.add_axes([0.1, 0.44, 0.1, 0.05])
+        self.axclusters = self.fig.add_axes([0.1, 0.1, 0.1, 0.3], facecolor=self.Palette.slider_bg)
+        #self.axradio = self.fig.add_axes([0.1, 0.1, 0.1, 0.15], facecolor = self.Palette.slider_bg)
 
         
         if type(preplots) is int:
 
             P_in = P_mid = P_out = None
             #self.PREPLOTS = np.array([])
+            print(self.PRECISION)
             for i in tqdm(range(self.PRECISION), desc = "Finding projections..."):
                 sd = i*self.MAX_SD/self.PRECISION
 
@@ -225,6 +232,25 @@ class InteractiveGraph:
         self.lasso_button.on_clicked(self.lasso_select)
 
 
+        self.Palette.remove_border(self.axclusterbutton)
+
+        self.cluster_button = Button(
+            ax=self.axclusterbutton,
+            label = "Cluster",
+            color = self.Palette.slider_colour,
+            hovercolor = self.Palette.blue
+        )
+
+        self.cluster_button.label.set_color(self.Palette.off_white)
+        self.cluster_button.label.set_font('serif')
+        self.cluster_button.label.set_fontsize(14)
+        self.cluster_button.on_clicked(self.show_clusters)
+
+
+        self.axclusters.set_title("Clusters", fontdict=self.Palette.subtitle_font)
+        self.Palette.remove_border(self.axclusters)
+
+        '''
         self.Palette.remove_border(self.axradio)
         self.axradio.set_title("Weighting", fontdict=self.Palette.subtitle_font)
 
@@ -237,6 +263,7 @@ class InteractiveGraph:
                            "edgecolor": [0.8*self.Palette.green, 0.8*self.Palette.blue, 0.8*self.Palette.dark_blue]}
         )
         self.factor_radio.on_clicked(self.change_factor)
+        '''
 
         self.fig.canvas.mpl_connect('pick_event', self.pick_axes)
         self.update(self.PREPLOTS[self.points_ind, 0])
@@ -294,18 +321,13 @@ class InteractiveGraph:
             
     def drag_axes(self, event):
         u, v = self.curr_proj[0], self.curr_proj[1]
-        nonzeros = 0
-        for row in self.curr_proj.T:
-            if not np.allclose(row, np.zeros(2)):
-                nonzeros += 1
 
-        dim2 = (nonzeros <= 2)
         pos = np.array([event.xdata*2/self.limit, event.ydata*2/self.limit])
         precision = 0.00001
         a = np.delete(u, self.dragged)
         b = np.delete(v, self.dragged)
-        A = pos[0] if (np.linalg.norm(pos) < (1-precision) and not dim2) else (1 - precision)*(pos[0])/np.linalg.norm(pos)
-        B = pos[1] if (np.linalg.norm(pos) < (1-precision) and not dim2) else (1 - precision)*(pos[1])/np.linalg.norm(pos)
+        A = pos[0] if np.linalg.norm(pos) < (1-precision) else (1 - precision)*(pos[0])/np.linalg.norm(pos)
+        B = pos[1] if np.linalg.norm(pos) < (1-precision) else (1 - precision)*(pos[1])/np.linalg.norm(pos)
 
         au = a/np.linalg.norm(a)
         bu = b/np.linalg.norm(b)
@@ -357,19 +379,20 @@ class InteractiveGraph:
         self.fig.canvas.mpl_disconnect(self.drag_id)
         self.fig.canvas.mpl_disconnect(self.release_id)
 
-
-    def change_factor(self, label):
-        radio_labels = {"Inner": 0, "None": 1, "Outer": 2}
-        self.weight_index = radio_labels[label]
-
-        points = self.CALC.get_data()[:, self.points_ind]
-        u, v = self.CALC.optimise_plane(points=points, from_plane=self.curr_proj, factor=self.FACTORS[self.weight_index])
-        P = np.vstack([u, v])
-        self.update(P)
+    def show_clusters(self):
+        pass
 
     def change_cutoff(self, val = None):
-        proj = self.PREPLOTS[int(self.cutoff_slider.val*self.PRECISION/self.MAX_SD), 0]
-        self.factor_radio.set_active(1)
+        proj_ind = self.cutoff_slider.val*self.PRECISION/self.MAX_SD
+        if int(proj_ind) == len(self.PREPLOTS) - 1:
+            proj = self.PREPLOTS[int(proj_ind), 0]
+        else:
+            proj_low = self.PREPLOTS[int(proj_ind), 0]
+            proj_high = self.PREPLOTS[int(proj_ind) + 1, 0]
+            frac = proj_ind - int(proj_ind)
+            proj = proj_low + frac*(proj_high - proj_low)
+        
+        #self.factor_radio.set_active(1)
         self.points_ind = self.CALC.partition_data(self.cutoff_slider.val)
         self.point_colours[self.points_ind:] = self.Palette.points_colour
         self.point_colours[:self.points_ind] = self.Palette.redundant_points_colour
@@ -472,7 +495,7 @@ class SelectFromCollection:
 
 # Save to binary file
 if __name__=='__main__':
-    this_graph = InteractiveGraph(200)
+    this_graph = InteractiveGraph()
     #writefile = input("Enter path to save widget (.pickle extension): ")
     #pl.dump((this_graph.PREPLOTS, this_graph.CALC, this_graph.limits), open(writefile,'wb'))
     plt.show()
