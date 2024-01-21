@@ -140,3 +140,39 @@
                     axs[j, i].plot(ellipses[k][0], ellipses[k][1])
 
         plt.show()
+
+
+# Lasso
+class SelectFromCollection:
+
+    def __init__(self, ax, collection, graph_obj):
+        self.canvas = ax.figure.canvas
+        self.collection = collection
+        self.graph = graph_obj
+
+        self.xys = collection.get_offsets()
+        self.Npts = len(self.xys)
+        self.fc = self.graph.point_colours
+
+
+        self.lasso = LassoSelector(ax, onselect=self.onselect)
+        self.ind = []
+
+    def onselect(self, verts):
+        path = Path(verts)
+        self.ind = np.nonzero(path.contains_points(self.xys))[0]
+        self.fc[:] = self.graph.Palette.redundant_points_colour
+        self.fc[self.ind] = self.graph.Palette.points_colour
+        self.graph.point_colours = self.fc
+        self.graph.update()
+        self.graph.ax.set_title("Press enter to accept selection")
+        self.canvas.draw_idle()
+
+    def disconnect(self):
+        self.lasso.disconnect_events()
+        #cutoff_ind = self.graph.CALC.partition_data(InteractiveGraph.cutoff_slider.val)
+        #self.fc[:cutoff_ind] = self.graph.Palette.redundant_points_colour
+        #self.fc[cutoff_ind:] = self.graph.Palette.points_colour
+        #self.collection.set_facecolors(self.fc)
+        #self.graph.change_cutoff()
+        self.canvas.draw_idle()

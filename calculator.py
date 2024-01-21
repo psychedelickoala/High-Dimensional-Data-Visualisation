@@ -19,7 +19,7 @@ class Calculator:
     :attribute __mean: dim length array; centroid of the data set.
     """
 
-    def __init__(self, data: str | np.ndarray, ellipse_res: int = 60, cov = None, cov_mean = None) -> None:
+    def __init__(self, data: str | np.ndarray, dep_data: str = None, ellipse_res: int = 60, cov = None, cov_mean = None) -> None:
         """
         Initialises calculator.
         Reads and sorts data and constructs circle. These can be reset later.
@@ -28,7 +28,7 @@ class Calculator:
         :optional param ellipse_res: integer number of points to draw of the projected ellipses.
         """
 
-        self.set_data(data, cov, cov_mean)
+        self.set_data(data, dep_data, cov, cov_mean)
         self.set_ellipse_res(ellipse_res)
 
     def __len__(self) -> int:
@@ -82,7 +82,7 @@ class Calculator:
         ind = np.searchsorted(self.__sds, sd)
         return self.__data[:, ind:]
 
-    def set_data(self, data: str | np.ndarray, cov, cov_mean) -> None:
+    def set_data(self, data: str | np.ndarray, dep_data, cov, cov_mean) -> None:
         """
         Set data for calculator to analyse.
 
@@ -112,14 +112,13 @@ class Calculator:
         t_data = np.linalg.inv(temp_basis) @ (unsorted_data - self.__cov_mean)
 
         indexlist = np.argsort(np.linalg.norm(t_data, axis=0))
-        sorted_t_data = t_data[:, indexlist]
-
-
-        self.__data = (temp_basis @ sorted_t_data) + self.__cov_mean
+        
+        self.__dep_data = None if dep_data is None else dep_data[:, indexlist]
+        self.__data = unsorted_data[:, indexlist]
         
         # set covariance, dimensions based on SORTED data
         self.__dim = self.__data.shape[0]
-        m_dists = np.linalg.norm(sorted_t_data, axis=0)
+        m_dists = np.linalg.norm(t_data[:, indexlist], axis=0)
         self.__sds = norm.isf((chi2.sf(m_dists**2, self.__dim))/2)
 
         self.__covariance = np.cov(self.__data) if cov is None else cov
