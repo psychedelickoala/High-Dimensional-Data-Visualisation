@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from numpy import ndarray
 from tqdm import tqdm
 import numpy as np
 from scipy.stats import norm, chi2
@@ -8,18 +9,6 @@ from matplotlib.patches import BoxStyle
 from matplotlib.path import Path
 import warnings
 warnings.filterwarnings("error")
-
-
-base_layout = {
-    "ax" : [0.35, 0.1, 0.6, 0.8],
-    "axslider" : [0.24, 0.1, 0.02, 0.8],
-    "axcheckbox" : [0.1, 0.65, 0.1, 0.25],
-    "axrandbutton" : [0.1, 0.58, 0.1, 0.05],
-    "axlassobutton" : [0.1, 0.51, 0.1, 0.05],
-    "axclusterbutton" : [0.1, 0.44, 0.1, 0.05],
-    "axclusters" : [0.1, 0.1, 0.1, 0.3],
-    "orientation" : "vertical"
-}
 
 
 # Keeping track of interactive elements
@@ -63,11 +52,22 @@ class InteractiveGraph:
 
     # constant
     MAX_SD: float = None
-    PRECISION: int = None
+    PRECISION: int = 20
     PREPLOTS: list[np.ndarray] = None
     CALC: Calculator = None
     CONFS: dict = None
     LIMIT: float = None
+    LAYOUT: dict = {
+        "ax" : [0.35, 0.1, 0.6, 0.8],
+        "axdep" : None,
+        "axslider" : [0.24, 0.1, 0.02, 0.8],
+        "axcheckbox" : [0.1, 0.65, 0.1, 0.25],
+        "axrandbutton" : [0.1, 0.58, 0.1, 0.05],
+        "axlassobutton" : [0.1, 0.51, 0.1, 0.05],
+        "axclusterbutton" : [0.1, 0.44, 0.1, 0.05],
+        "axclusters" : [0.1, 0.1, 0.1, 0.3],
+        "orientation" : "vertical"
+    }
 
     # variable
     curr_proj: np.ndarray = None
@@ -81,6 +81,7 @@ class InteractiveGraph:
     # widgets
     fig = None
     ax: plt.Axes = None
+    axdep = None
     axslider: plt.Axes = None
     cutoff_slider: Slider = None
     axcheckbox: plt.Axes = None
@@ -89,48 +90,28 @@ class InteractiveGraph:
     rand_button: Button =  None
 
 
-    def __init__(self, layout, preplots: int = 20) -> None:
+    def __init__(self, data, cov_data = None, mean_data = None) -> None:
         self.Palette()
  
-        readfile = input("Enter path to data csv file: ")
-        if readfile == "1":
-            readfile = "samples/p5pexample/np.csv"
-            cov = np.loadtxt('samples/p5pexample/cov_mat.csv', dtype=float, delimiter=",")
-            mean = np.loadtxt('samples/p5pexample/centre_of_ellipses.csv', dtype=float, delimiter=",")
-        else:
-            manual_cov = input("Would you like to specify a covariance matrix? Y/N: ")
-            cov = mean = None
-            if manual_cov == 'Y':
-                cov_file = input("Enter path to covariance matrix file: ")
-                cov = np.loadtxt(cov_file, dtype=float, delimiter=",")
-                manual_mean = input("Would you like to specify an ellipsoid mean? Y/N: ")
-                if manual_mean == "Y":
-                    mean_file = input("Enter path to ellipsoid mean file: ")
-                    mean = np.loadtxt(mean_file, dtype=float, delimiter=",")
-        self.CALC = Calculator(readfile, cov=cov, cov_mean = mean)
+        self.CALC = Calculator(data=data, cov=cov_data, cov_mean=mean_data)
 
-        self.PRECISION: int = preplots if type(preplots) is int else len(preplots)
+        #self.PRECISION: int = preplots if type(preplots) is int else len(preplots)
         self.CONFS: dict = {sdstr : np.sqrt(chi2.ppf((2*norm.cdf(float(sdstr[:-1])) - 1), self.CALC.get_dim())) for sdstr in self.m_dists_using.keys()}
         self.M_DISTS: list[int] = self.CONFS.values()
         self.MAX_SD = self.CALC.get_max_sds()*0.99
         self.LIMIT = self.CALC.get_max_norm()
 
         self.point_colours = np.vstack([self.Palette.points_colour]*len(self.CALC))
-        self.layout = layout
         
-        if type(preplots) is int:
-            P = None
-            for i in tqdm(range(self.PRECISION), desc = "Finding projections..."):
-                sd = i*self.MAX_SD/self.PRECISION
-                u, v = self.CALC.optimise_plane(sd=sd, from_plane=P)
-                P = np.vstack([u, v])
-                self.PREPLOTS = P[np.newaxis, :, :] if i==0 else np.vstack([self.PREPLOTS, P[np.newaxis, :, :]])
-        else:
-            self.PREPLOTS = preplots
-
-
+        P = None
+        for i in tqdm(range(self.PRECISION), desc = "Finding projections..."):
+            sd = i*self.MAX_SD/self.PRECISION
+            u, v = self.CALC.optimise_plane(sd=sd, from_plane=P)
+            P = np.vstack([u, v])
+            self.PREPLOTS = P[np.newaxis, :, :] if i==0 else np.vstack([self.PREPLOTS, P[np.newaxis, :, :]])
 
         self.build_widgets()
+        self.show_projection = False
         self.update(self.PREPLOTS[self.points_ind])
 
     def update(self, proj: np.ndarray | None = None):
@@ -162,6 +143,9 @@ class InteractiveGraph:
         
         self.ax.set_xbound(-self.LIMIT, self.LIMIT)
         self.ax.set_ybound(-self.LIMIT, self.LIMIT)
+
+        if self.show_projection:
+            self.ax.set_title(f"[{np.round(self.curr_proj[0], 3)} {np.round(self.curr_proj[1], 3)}]")
 
         self.fig.canvas.draw_idle()
 
@@ -264,7 +248,8 @@ class InteractiveGraph:
     def lasso_select(self, event):
         self.lasso_button.color = self.Palette.blue
         self.lasso = LassoSelector(self.ax, onselect=self.on_select)
-        self.fig.canvas.mpl_connect("key_press_event", self.lasso_accept)
+        self.lassoing = True
+
 
     def on_select(self, verts):
         path = Path(verts)
@@ -276,9 +261,9 @@ class InteractiveGraph:
         self.ax.set_title("Press enter to accept selection")
         self.fig.canvas.draw_idle()
 
-    def lasso_accept(self, event):
-        if event.key == "enter":
-
+    def key_press(self, event):
+        if event.key == "enter" and self.lassoing:
+            self.lassoing = False
             self.lasso_button.color = self.Palette.slider_colour
             self.points_ind = self.suggest_ind
             self.suggest_ind = None
@@ -291,6 +276,10 @@ class InteractiveGraph:
             self.lasso.disconnect_events()
             self.update(P)
 
+        elif event.key == "m":
+            self.show_projection = not self.show_projection
+            self.update()
+
     def show_ellipse(self, label):
         self.m_dists_using[label] = not self.m_dists_using[label]
         self.update()
@@ -298,13 +287,13 @@ class InteractiveGraph:
     def build_widgets(self):
         # figure and axes
         self.fig = plt.figure(facecolor=self.Palette.bg_colour)
-        self.ax = self.fig.add_axes(self.layout["ax"], facecolor = self.Palette.graph_bg)
-        self.axslider = self.fig.add_axes(self.layout["axslider"], facecolor=self.Palette.slider_bg)
-        self.axcheckbox = self.fig.add_axes(self.layout["axcheckbox"], facecolor=self.Palette.slider_bg)
-        self.axrandbutton = self.fig.add_axes(self.layout["axrandbutton"])
-        self.axlassobutton = self.fig.add_axes(self.layout["axlassobutton"])
-        self.axclusterbutton = self.fig.add_axes(self.layout["axclusterbutton"])
-        self.axclusters = self.fig.add_axes(self.layout["axclusters"], facecolor=self.Palette.slider_bg)
+        self.ax = self.fig.add_axes(self.LAYOUT["ax"], facecolor = self.Palette.graph_bg)
+        self.axslider = self.fig.add_axes(self.LAYOUT["axslider"], facecolor=self.Palette.slider_bg)
+        self.axcheckbox = self.fig.add_axes(self.LAYOUT["axcheckbox"], facecolor=self.Palette.slider_bg)
+        self.axrandbutton = self.fig.add_axes(self.LAYOUT["axrandbutton"])
+        self.axlassobutton = self.fig.add_axes(self.LAYOUT["axlassobutton"])
+        self.axclusterbutton = self.fig.add_axes(self.LAYOUT["axclusterbutton"])
+        self.axclusters = self.fig.add_axes(self.LAYOUT["axclusters"], facecolor=self.Palette.slider_bg)
 
         self.ax.set_aspect('equal', adjustable='box')
 
@@ -318,7 +307,7 @@ class InteractiveGraph:
             valmax=self.MAX_SD,
             valinit=0,
             handle_style={"edgecolor":self.Palette.slider_colour, "facecolor": self.Palette.graph_bg},
-            orientation="vertical",
+            orientation=self.LAYOUT["orientation"],
             color=self.Palette.slider_colour,
             track_color=self.Palette.slider_bg,
             closedmax=False,
@@ -394,14 +383,44 @@ class InteractiveGraph:
         self.Palette.remove_border(self.axclusters)
 
         self.fig.canvas.mpl_connect('pick_event', self.pick_axes)
+        self.fig.canvas.mpl_connect("key_press_event", self.key_press)
         self.fig.suptitle('Projected data', fontdict=self.Palette.title_font, fontsize=24)
 
-#class InteractiveFunction(InteractiveGraph):
+
+class InteractiveFunction(InteractiveGraph):
+    DEPCALC: Calculator = None
+    LAYOUT: dict = {
+        "ax" : [0.03, 0.25, 0.45, 0.7],
+        "axdep" : [0.52, 0.25, 0.45, 0.7],
+        "axslider" : [0.25, 0.13, 0.5, 0.02],
+        "axcheckbox" : [0.05, 0.02, 0.1, 0.2],
+        "axrandbutton" : [0.25, 0.05, 0.1, 0.05],
+        "axlassobutton" : [0.45, 0.05, 0.1, 0.05],
+        "axclusterbutton" : [0.65, 0.05, 0.1, 0.05],
+        "axclusters" : [0.85, 0.02, 0.1, 0.2],
+        "orientation" : "horizontal"
+    }
+
+    def __init__(self, data, dep_data=None, cov_data=None, mean_data=None, cov_dep=None, mean_dep=None) -> None:
+        super().__init__(data, cov_data, mean_data)
+        #self.DEPCALC = Calculator(data=dep_data, cov=cov_dep, cov_mean=mean_dep, sort = self.CALC.get_sort())
+
+    def update(self, proj: ndarray | None = None):
+        super().update(proj)
+
+
+
+    def build_widgets(self):
+        super().build_widgets()
+        self.axdep = self.fig.add_axes(self.LAYOUT["ax"], facecolor = self.Palette.graph_bg)
+        self.axdep.set_aspect('equal', adjustable='box')
+
+
 
 
 # Save to binary file
 if __name__=='__main__':
-    this_graph = InteractiveGraph(base_layout)
+    this_graph = InteractiveGraph(data="samples/v1.csv")#, cov_data="samples/p5pexample/cov_mat.csv", mean_data="samples/p5pexample/centre_of_ellipses.csv")
     #writefile = input("Enter path to save widget (.pickle extension): ")
     #pl.dump((this_graph.PREPLOTS, this_graph.CALC, this_graph.limits), open(writefile,'wb'))
     plt.show()

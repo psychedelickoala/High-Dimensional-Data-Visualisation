@@ -176,3 +176,20 @@ class SelectFromCollection:
         #self.collection.set_facecolors(self.fc)
         #self.graph.change_cutoff()
         self.canvas.draw_idle()
+
+
+        readfile = input("Enter path to data csv file: ")
+        if readfile == "1":
+            readfile = "samples/p5pexample/np.csv"
+            cov = np.loadtxt('samples/p5pexample/cov_mat.csv', dtype=float, delimiter=",")
+            mean = np.loadtxt('samples/p5pexample/centre_of_ellipses.csv', dtype=float, delimiter=",")
+        else:
+            manual_cov = input("Would you like to specify a covariance matrix? Y/N: ")
+            cov = mean = None
+            if manual_cov == 'Y':
+                cov_file = input("Enter path to covariance matrix file: ")
+                cov = np.loadtxt(cov_file, dtype=float, delimiter=",")
+                manual_mean = input("Would you like to specify an ellipsoid mean? Y/N: ")
+                if manual_mean == "Y":
+                    mean_file = input("Enter path to ellipsoid mean file: ")
+                    mean = np.loadtxt(mean_file, dtype=float, delimiter=",")

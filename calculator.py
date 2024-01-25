@@ -19,7 +19,7 @@ class Calculator:
     :attribute __mean: dim length array; centroid of the data set.
     """
 
-    def __init__(self, data: str | np.ndarray, dep_data: str = None, ellipse_res: int = 60, cov = None, cov_mean = None) -> None:
+    def __init__(self, data: str | np.ndarray, ellipse_res: int = 60, cov = None, cov_mean = None, sort = None) -> None:
         """
         Initialises calculator.
         Reads and sorts data and constructs circle. These can be reset later.
@@ -28,7 +28,7 @@ class Calculator:
         :optional param ellipse_res: integer number of points to draw of the projected ellipses.
         """
 
-        self.set_data(data, dep_data, cov, cov_mean)
+        self.set_data(data, cov, cov_mean, sort)
         self.set_ellipse_res(ellipse_res)
 
     def __len__(self) -> int:
@@ -37,6 +37,9 @@ class Calculator:
     
     def get_dim(self) -> int:
         return self.__dim
+
+    def get_sort(self) -> np.ndarray:
+        return self.__sort
 
     def get_covariance(self) -> np.ndarray[np.ndarray[float]]:
         """Returns covariance matrix, dim x dim array"""
@@ -82,7 +85,7 @@ class Calculator:
         ind = np.searchsorted(self.__sds, sd)
         return self.__data[:, ind:]
 
-    def set_data(self, data: str | np.ndarray, dep_data, cov, cov_mean) -> None:
+    def set_data(self, data: str | np.ndarray, cov, cov_mean, sort) -> None:
         """
         Set data for calculator to analyse.
 
@@ -99,6 +102,11 @@ class Calculator:
                 self.__attribute_names = np.array(["e" + str(i) for i in range(unsorted_data.shape[0])])
         else:
             unsorted_data = data
+
+        if type(cov) is str:
+            cov = np.loadtxt(fname = cov, dtype=float, delimiter=",", skiprows=0)
+        if type(cov_mean) is str:
+            cov_mean = np.loadtxt(fname = cov_mean, dtype=float, delimiter=",", skiprows=0)
         
         # calculate mean (can add/subtract from matrices)
         self.__mean = np.mean(unsorted_data, axis = 1, keepdims=True)
@@ -106,22 +114,25 @@ class Calculator:
         #self.__cov_mean = np.broadcast_to(cov_mean, ()) if cov_mean is not None else self.__mean
         
         #sorting the data based on increasing mahalanobis distance from mean
-        temp_covariance = np.cov(unsorted_data) if cov is None else cov
-        temp_basis = np.linalg.cholesky(temp_covariance)
+        self.__covariance = np.cov(unsorted_data) if cov is None else cov
+        temp_basis = np.linalg.cholesky(self.__covariance)
 
         t_data = np.linalg.inv(temp_basis) @ (unsorted_data - self.__cov_mean)
 
-        indexlist = np.argsort(np.linalg.norm(t_data, axis=0))
+        self.__sort = np.argsort(np.linalg.norm(t_data, axis=0)) if sort is None else sort
+        sorted_t_data = t_data[:, self.__sort]
         
-        self.__dep_data = None if dep_data is None else dep_data[:, indexlist]
-        self.__data = unsorted_data[:, indexlist]
+        #self.__dep_data = None if dep_data is None else dep_data[:, indexlist]
+
+
+        self.__data = unsorted_data[:, self.__sort]
         
         # set covariance, dimensions based on SORTED data
         self.__dim = self.__data.shape[0]
-        m_dists = np.linalg.norm(t_data[:, indexlist], axis=0)
+        m_dists = np.linalg.norm(sorted_t_data, axis=0)
         self.__sds = norm.isf((chi2.sf(m_dists**2, self.__dim))/2)
 
-        self.__covariance = np.cov(self.__data) if cov is None else cov
+        #self.__covariance = np.cov(self.__data) if cov is None else cov
 
         #self.__cov_mean = cov_mean
         # ellipsoid matrix
