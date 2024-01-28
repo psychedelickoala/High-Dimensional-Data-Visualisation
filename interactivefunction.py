@@ -126,6 +126,11 @@ class InteractiveFunction(InteractiveGraph):
         P_dep = self.DEPCALC.get_random_plane()
         self.update(P, P_dep)
 
+    def key_press(self, event):
+        super().key_press(event)
+        if event.key == "m":
+            print(np.round(self.curr_dep_proj, 4))
+
     def change_cutoff(self, val=None):
         proj = super().change_cutoff(val, pres = self.PREPLOTS, update=False)
         dep_proj = super().change_cutoff(val, pres = self.DEPPLOTS, update=False)
