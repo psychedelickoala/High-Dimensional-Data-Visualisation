@@ -169,7 +169,8 @@ class Calculator:
 
         return clusters
 
-
+    def get_cov_mean(self) -> np.ndarray:
+        return self.__cov_mean
 
 
     def set_ellipse_res(self, ellipse_res: float) -> None:
@@ -209,8 +210,8 @@ class Calculator:
     def get_proj_ellipses(self, P: np.ndarray, m_dists: list[float] = [1, 2, 3]) -> list[np.ndarray]:
         M = P @ self.__covariance @ P.T
         T = np.linalg.cholesky(M)
-        proj_mean = P @ self.__cov_mean
-        return [(dist * T @ self.__circle) + proj_mean for dist in m_dists]
+        #proj_mean = P @ self.__cov_mean
+        return [(dist * T @ self.__circle) for dist in m_dists]
 
     @staticmethod
     def __num(u: np.ndarray, v: np.ndarray, C: np.ndarray, W: np.ndarray) -> np.ndarray:
@@ -274,7 +275,7 @@ class Calculator:
         P = K @ np.linalg.inv(B)
         return self.orthonormalise(P[0], P[1])
 
-    def optimise_plane(self, sd: float = None, points: np.ndarray | None = None, factor: float | None = None, \
+    def optimise_plane(self, sd: float = None, points: np.ndarray | None = None, ind = None, factor: float | None = None, \
         from_plane: np.ndarray | None = None, step: float = 0.01, tol: float = 0.00001, verbose: bool = False) -> tuple[np.ndarray]:
         """
         Numerically searches for the plane that will maximise total_m_dist.
@@ -291,7 +292,10 @@ class Calculator:
    
         if points is None:
             if sd is None:
-                W = self.__data - self.__cov_mean
+                if ind is None:
+                    W = self.__data - self.__cov_mean
+                else:
+                    W = self.__data[:, ind:] - self.__cov_mean
             else:
                 W = self.get_outliers(sd) - self.__cov_mean
         else:

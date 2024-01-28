@@ -1,11 +1,11 @@
 import matplotlib.pyplot as plt
-from numpy import ndarray
+from matplotlib.backend_bases import MouseButton
 from tqdm import tqdm
 import numpy as np
 from scipy.stats import norm, chi2
 from calculator import Calculator
-from matplotlib.widgets import Button, Slider, CheckButtons, LassoSelector, RadioButtons
-from matplotlib.patches import BoxStyle
+from matplotlib.widgets import Button, Slider, CheckButtons, LassoSelector
+from matplotlib.patches import BoxStyle, Rectangle
 from matplotlib.path import Path
 import warnings
 warnings.filterwarnings("error")
@@ -34,7 +34,14 @@ class InteractiveGraph:
         redundant_points_colour = graph_bg * 0.9
         axes_colour = black
 
-        cluster_colours = np.outer(np.array([0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5]), dark_blue)
+        #cluster_colours = np.outer(np.array([0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5]), dark_blue)
+        cluster_colours = np.array([[200, 200, 200],
+            [255, 84, 0], [255, 142, 0], [255, 210, 0],
+            [129, 230, 80], [0, 210, 103], [0, 192, 255],
+            [139, 72, 254], [202, 65, 252], [255, 70, 251]
+        ])/255
+
+        cluster_colours_light = (np.array([1, 1, 1]) - cluster_colours)*0.5 + cluster_colours
 
         title_font = {"color": off_white, "family": "serif"}
         subtitle_font = {"color": off_white, "family": "serif", "size": 14}
@@ -68,6 +75,11 @@ class InteractiveGraph:
         "axclusters" : [0.1, 0.1, 0.1, 0.3],
         "orientation" : "vertical"
     }
+    LAYOUT["cluster"] = [None,
+        [(0.00, 0.67), 0.33, 0.33], [(0.33, 0.67), 0.34, 0.33], [(0.67, 0.67), 0.33, 0.33],
+        [(0.00, 0.33), 0.33, 0.34], [(0.33, 0.33), 0.34, 0.34], [(0.67, 0.33), 0.33, 0.34],
+        [(0.00, 0.00), 0.33, 0.33], [(0.33, 0.00), 0.34, 0.33], [(0.67, 0.00), 0.33, 0.33]
+    ]
 
     # variable
     curr_proj: np.ndarray = None
@@ -75,8 +87,10 @@ class InteractiveGraph:
     curr_collection = None
     dragged = None
     clusters = None
+    clusters_in_use = [0]
     m_dists_using: dict = {"1σ": False, "2σ": False, "3σ": True, "4σ": False, "5σ": False, "6σ": False}
     attr_labels = []
+    suggest_ind = None
 
     # widgets
     fig = None
@@ -90,7 +104,7 @@ class InteractiveGraph:
     rand_button: Button =  None
 
 
-    def __init__(self, data, cov_data = None, mean_data = None) -> None:
+    def __init__(self, data, cov_data = None, mean_data = None, update = True) -> None:
         self.Palette()
  
         self.CALC = Calculator(data=data, cov=cov_data, cov_mean=mean_data)
@@ -102,6 +116,8 @@ class InteractiveGraph:
         self.LIMIT = self.CALC.get_max_norm()
 
         self.point_colours = np.vstack([self.Palette.points_colour]*len(self.CALC))
+        self.clusters = np.array([0]*len(self.CALC))
+        self.num_clusters = 0
         
         P = None
         for i in tqdm(range(self.PRECISION), desc = "Finding projections..."):
@@ -111,66 +127,119 @@ class InteractiveGraph:
             self.PREPLOTS = P[np.newaxis, :, :] if i==0 else np.vstack([self.PREPLOTS, P[np.newaxis, :, :]])
 
         self.build_widgets()
-        self.show_projection = False
-        self.update(self.PREPLOTS[self.points_ind])
+        if update:
+            self.update(self.PREPLOTS[self.points_ind])
 
-    def update(self, proj: np.ndarray | None = None):
+    def update(self, proj: np.ndarray | None = None, ax = None, calc = None, labels = None):
         if proj is not None:
             self.curr_proj = proj
+        if ax is None:
+            ax = self.ax
+        if calc is None:
+            calc = self.CALC
+        if labels is None:
+            labels = self.attr_labels
 
-        self.ax.cla()
+        ax.cla()
 
         # points
-        proj_points = self.curr_proj @ self.CALC.get_data()
-        self.curr_collection = self.ax.scatter(proj_points[0], proj_points[1], marker = ".")
-        self.curr_collection.set_facecolor(self.point_colours)
+        point_colours = self.get_point_colours()
+        proj_mean = self.curr_proj @ calc.get_cov_mean()
+        proj_points = self.curr_proj @ calc.get_data() - proj_mean
+        self.curr_collection = ax.scatter(proj_points[0], proj_points[1], marker = ".")
+        self.curr_collection.set_facecolor(point_colours)
         
         # ellipses
-        ellipses = self.CALC.get_proj_ellipses(self.curr_proj, [self.CONFS[m] for m in self.CONFS if self.m_dists_using[m]])
+        ellipses = calc.get_proj_ellipses(self.curr_proj, [self.CONFS[m] for m in self.CONFS if self.m_dists_using[m]])
         for i, ellipse in enumerate(ellipses):
-            self.ax.plot(ellipse[0], ellipse[1], c=self.Palette.ellipse_colours[i], linewidth = 2)
+            ax.plot(ellipse[0], ellipse[1], c=self.Palette.ellipse_colours[i], linewidth = 2)
 
         # axes
         i = 0
-        self.attr_labels.clear()
+        labels.clear()
         for proj_axis in self.curr_proj.T:
-            self.ax.plot([0, proj_axis[0]*self.LIMIT*0.5], [0, proj_axis[1]*self.LIMIT*0.5], c = self.Palette.axes_colour, linewidth = 1)
-            new_label = self.ax.text(proj_axis[0]*self.LIMIT*0.5, proj_axis[1]*self.LIMIT*0.5, self.CALC.get_attrs()[i], picker=True)
+            ax.plot([0, proj_axis[0]*calc.get_max_norm()*0.5], [0, proj_axis[1]*calc.get_max_norm()*0.5], c = self.Palette.axes_colour, linewidth = 1)
+            new_label = ax.text(proj_axis[0]*calc.get_max_norm()*0.5, proj_axis[1]*calc.get_max_norm()*0.5, calc.get_attrs()[i], picker=True)
             #new_label.set_picker(True)
             new_label.set_bbox(dict(facecolor=self.Palette.graph_bg, alpha=0.7, linewidth=0, boxstyle=BoxStyle.Round(pad=0.05)))
-            self.attr_labels.append(new_label)
+            labels.append(new_label)
             i += 1
         
-        self.ax.set_xbound(-self.LIMIT, self.LIMIT)
-        self.ax.set_ybound(-self.LIMIT, self.LIMIT)
 
-        if self.show_projection:
-            self.ax.set_title(f"[{np.round(self.curr_proj[0], 3)} {np.round(self.curr_proj[1], 3)}]")
+        ax.set_xbound(-calc.get_max_norm(), calc.get_max_norm())
+        ax.set_ybound(-calc.get_max_norm(), calc.get_max_norm())
 
         self.fig.canvas.draw_idle()
 
-    def pick_axes(self, event):
-        if event.mouseevent.dblclick:
-            ind = np.where(self.CALC.get_attrs() == event.artist.get_text())[0][0]
-            u, v = self.curr_proj[0], self.curr_proj[1]
+    def get_point_colours(self) -> np.ndarray:
+        point_colours = self.Palette.cluster_colours_light[self.clusters]
+        
+        #dark_colours = self.Palette.cluster_colours[self.clusters]
+        #clusters = self.clusters[self.points_ind] if type(self.points_ind) is np.ndarray else self.clusters[self.points_ind:]
+        #print(self.Palette.cluster_colours[clusters])
+        if type(self.points_ind) is np.ndarray:
+            point_colours[self.points_ind] = self.Palette.cluster_colours[self.clusters[self.points_ind]]
+        else:
+            point_colours[self.points_ind:] = self.Palette.cluster_colours[self.clusters[self.points_ind:]]
+        if self.suggest_ind is not None:
+            point_colours[self.suggest_ind] = np.zeros(3)
+        return point_colours
+
+
+    def pick_axes(self, event, calc = None, proj = None, update = True):
+        if calc is None:
+            calc = self.CALC
+        if proj is None:
+            proj = self.curr_proj
+
+        if isinstance(event.artist, Rectangle):
+            this_cluster = int(event.artist.get_gid())
+            if event.mouseevent.dblclick:
+                # delete cluster
+                self.clusters_in_use.remove(this_cluster)
+                self.clusters[np.where(self.clusters == this_cluster)[0]] = 0
+                self.num_clusters -= 1
+                event.artist.remove()
+                self.update()
+            elif event.mouseevent.button is MouseButton.RIGHT:
+                self.points_ind = np.where(self.clusters == this_cluster)[0]
+                points = calc.get_data()[:, self.points_ind]
+                u, v = calc.optimise_plane(points=points, from_plane=proj)
+                new_proj = np.vstack([u, v])
+                if update:
+                    self.update(new_proj)
+                else:
+                    return new_proj
+        
+        elif event.mouseevent.dblclick:
+            ind = np.where(calc.get_attrs() == event.artist.get_text())[0][0]
+            u, v = proj[0], proj[1]
             u[ind] = v[ind] = 0
             try:
                 u, v = self.CALC.orthonormalise(u, v)
             except RuntimeWarning:
                 pass
             else:
-                self.curr_proj = np.vstack([u, v])
-                self.update()
+                if update:
+                    self.update(np.vstack([u, v]))
+                else:
+                    return np.vstack([u, v])
         else:
-            self.dragged = np.where(self.CALC.get_attrs() == event.artist.get_text())[0][0]
+            self.dragged = np.where(calc.get_attrs() == event.artist.get_text())[0][0]
             self.dim2 = False
             self.drag_id = self.fig.canvas.mpl_connect("motion_notify_event", self.drag_axes)
             self.release_id = self.fig.canvas.mpl_connect('button_release_event', self.stop_dragging)
             
-    def drag_axes(self, event):
-        u, v = self.curr_proj[0], self.curr_proj[1]
-
-        pos = np.array([event.xdata*2/self.LIMIT, event.ydata*2/self.LIMIT])
+    def drag_axes(self, event, proj = None, calc = None, update = True):
+        if proj is None:
+            proj = self.curr_proj
+        if calc is None:
+            calc = self.CALC
+        u, v = proj[0], proj[1]
+        try:
+            pos = np.array([event.xdata*2/calc.get_max_norm(), event.ydata*2/calc.get_max_norm()])
+        except:
+            self.stop_dragging()
         precision = 0.00001
         a = np.delete(u, self.dragged)
         b = np.delete(v, self.dragged)
@@ -215,33 +284,37 @@ class InteractiveGraph:
         #u[self.dragged] = event.xdata*2/self.LIMIT
         #v[self.dragged] = event.ydata*2/self.LIMIT
         #u, v = self.CALC.orthonormalise(u, v)
-        
-        self.update(np.vstack([u, v]))
+        if update:
+            self.update(np.vstack([u, v]))
+        else:
+            return np.vstack([u, v])
 
-    def stop_dragging(self, event):
+    def stop_dragging(self, event = None):
         self.dragged = None
         self.fig.canvas.mpl_disconnect(self.drag_id)
         self.fig.canvas.mpl_disconnect(self.release_id)
 
-    def show_clusters(self):
-        pass
-
-    def change_cutoff(self, val = None):
+    def change_cutoff(self, val = None, pres = None, update = True):
+        if pres is None:
+            pres = self.PREPLOTS
         proj_ind = self.cutoff_slider.val*self.PRECISION/self.MAX_SD
         if int(proj_ind) >= self.PRECISION - 1:
-            proj = self.PREPLOTS[self.PRECISION-1]
+            proj = pres[self.PRECISION-1]
         else:
-            proj_low = self.PREPLOTS[int(proj_ind)]
-            proj_high = self.PREPLOTS[int(proj_ind) + 1]
+            proj_low = pres[int(proj_ind)]
+            proj_high = pres[int(proj_ind) + 1]
             frac = proj_ind - int(proj_ind)
             proj = proj_low + frac*(proj_high - proj_low)
         
         self.points_ind = self.CALC.partition_data(self.cutoff_slider.val)
         self.point_colours[self.points_ind:] = self.Palette.points_colour
         self.point_colours[:self.points_ind] = self.Palette.redundant_points_colour
-        self.update(proj)
+        if update:
+            self.update(proj)
+        else:
+            return proj
 
-    def show_random(self, event):
+    def show_random(self, event = None):
         P = self.CALC.get_random_plane()
         self.update(P)
 
@@ -250,7 +323,6 @@ class InteractiveGraph:
         self.lasso = LassoSelector(self.ax, onselect=self.on_select)
         self.lassoing = True
 
-
     def on_select(self, verts):
         path = Path(verts)
         self.suggest_ind = np.nonzero(path.contains_points(self.curr_collection.get_offsets()))[0]
@@ -258,33 +330,78 @@ class InteractiveGraph:
         self.point_colours[self.suggest_ind] = self.Palette.points_colour
         
         self.update()
-        self.ax.set_title("Press enter to accept selection")
+        self.ax.set_title("Press enter to change projection, Y to add cluster")
         self.fig.canvas.draw_idle()
 
-    def key_press(self, event):
-        if event.key == "enter" and self.lassoing:
-            self.lassoing = False
-            self.lasso_button.color = self.Palette.slider_colour
+    def move_by_select(self, calc = None, proj = None, update = True):
+        if calc is None:
+            calc = self.CALC
+        if proj is None:
+            proj = self.curr_proj
+        if self.suggest_ind is not None:
             self.points_ind = self.suggest_ind
             self.suggest_ind = None
-            points = self.CALC.get_data()[:, self.points_ind]
+        points = calc.get_data()[:, self.points_ind]
 
-            self.ax.set_title("Loading projection...")
-            self.fig.canvas.draw_idle()
-            u, v = self.CALC.optimise_plane(points=points, from_plane=self.curr_proj)
-            P = np.vstack([u, v])
+        self.ax.set_title("Loading projection...")
+        self.fig.canvas.draw_idle()
+        u, v = calc.optimise_plane(points=points, from_plane=proj)
+        
+        if update:
+            self.curr_proj = np.vstack([u, v])
             self.lasso.disconnect_events()
-            self.update(P)
+        else:
+            return np.vstack([u, v])
+
+        #self.update(P)
+
+    def add_cluster(self):
+        if self.num_clusters == 9:
+            return
+        self.num_clusters += 1
+        this_cluster = [i for i in range(10) if i not in self.clusters_in_use][0]
+        self.clusters_in_use.append(this_cluster)
+        self.clusters[self.suggest_ind] = this_cluster
+        self.suggest_ind = None
+        self.axclusters.add_patch(Rectangle(
+            self.LAYOUT["cluster"][this_cluster][0], 
+            self.LAYOUT["cluster"][this_cluster][1],
+            self.LAYOUT["cluster"][this_cluster][2],
+            color = self.Palette.cluster_colours[this_cluster],
+            linewidth = 0,
+            picker = True,
+            gid = str(this_cluster)
+        ))
+        self.lasso.disconnect_events()
+        #self.update()
+
+    def key_press(self, event):
+        if self.lassoing:
+            self.lassoing = False
+            self.lasso_button.color = self.Palette.slider_colour
+            if event.key == "enter":
+                self.move_by_select()
+            elif event.key == "y":
+                self.add_cluster()
+            self.update()
+
+        elif event.key == "r":
+            self.show_random(event)
 
         elif event.key == "m":
-            self.show_projection = not self.show_projection
-            self.update()
+            print("~~ SELECTED PROJECTION ~~")
+            print(np.round(self.curr_proj, 4))
+
+        elif event.key == "n":
+            ids = self.CALC.get_sort()[self.points_ind] if type(self.points_ind) is np.ndarray else self.CALC.get_sort()[self.points_ind:]
+            print("~~ SELECTED POINT IDS ~~")
+            print(ids)
 
     def show_ellipse(self, label):
         self.m_dists_using[label] = not self.m_dists_using[label]
         self.update()
 
-    def build_widgets(self):
+    def build_widgets(self, ellipses = True):
         # figure and axes
         self.fig = plt.figure(facecolor=self.Palette.bg_colour)
         self.ax = self.fig.add_axes(self.LAYOUT["ax"], facecolor = self.Palette.graph_bg)
@@ -292,8 +409,16 @@ class InteractiveGraph:
         self.axcheckbox = self.fig.add_axes(self.LAYOUT["axcheckbox"], facecolor=self.Palette.slider_bg)
         self.axrandbutton = self.fig.add_axes(self.LAYOUT["axrandbutton"])
         self.axlassobutton = self.fig.add_axes(self.LAYOUT["axlassobutton"])
-        self.axclusterbutton = self.fig.add_axes(self.LAYOUT["axclusterbutton"])
+        #self.axclusterbutton = self.fig.add_axes(self.LAYOUT["axclusterbutton"])
         self.axclusters = self.fig.add_axes(self.LAYOUT["axclusters"], facecolor=self.Palette.slider_bg)
+
+        # Hide X and Y axes label marks
+        self.axclusters.xaxis.set_tick_params(labelbottom=False)
+        self.axclusters.yaxis.set_tick_params(labelleft=False)
+
+        # Hide X and Y axes tick marks
+        self.axclusters.set_xticks([])
+        self.axclusters.set_yticks([])
 
         self.ax.set_aspect('equal', adjustable='box')
 
@@ -316,19 +441,19 @@ class InteractiveGraph:
         self.cutoff_slider.on_changed(self.change_cutoff)
 
         # Checkboxes
+        if ellipses:
+            self.axcheckbox.set_title("Ellipses", fontdict=self.Palette.subtitle_font)
+            self.Palette.remove_border(self.axcheckbox)
 
-        self.axcheckbox.set_title("Ellipses", fontdict=self.Palette.subtitle_font)
-        self.Palette.remove_border(self.axcheckbox)
-
-        self.m_checkbox = CheckButtons(
-            ax = self.axcheckbox,
-            labels = self.CONFS.keys(),
-            label_props={'color': self.Palette.ellipse_colours, "size":[14]*len(self.CONFS), "family":['serif']*len(self.CONFS)},
-            frame_props={'edgecolor': self.Palette.ellipse_colours, "facecolor":'white'},
-            check_props={'facecolor': self.Palette.ellipse_colours},
-            actives=self.m_dists_using.values()
-        )
-        self.m_checkbox.on_clicked(self.show_ellipse)
+            self.m_checkbox = CheckButtons(
+                ax = self.axcheckbox,
+                labels = self.CONFS.keys(),
+                label_props={'color': self.Palette.ellipse_colours, "size":[14]*len(self.CONFS), "family":['serif']*len(self.CONFS)},
+                frame_props={'edgecolor': self.Palette.ellipse_colours, "facecolor":'white'},
+                check_props={'facecolor': self.Palette.ellipse_colours},
+                actives=self.m_dists_using.values()
+            )
+            self.m_checkbox.on_clicked(self.show_ellipse)
 
 
         # Button
@@ -364,63 +489,23 @@ class InteractiveGraph:
         self.lasso_button.on_clicked(self.lasso_select)
 
 
-        self.Palette.remove_border(self.axclusterbutton)
 
-        self.cluster_button = Button(
-            ax=self.axclusterbutton,
-            label = "Cluster",
-            color = self.Palette.slider_colour,
-            hovercolor = self.Palette.blue
-        )
-
-        self.cluster_button.label.set_color(self.Palette.off_white)
-        self.cluster_button.label.set_font('serif')
-        self.cluster_button.label.set_fontsize(14)
-        self.cluster_button.on_clicked(self.show_clusters)
 
 
         self.axclusters.set_title("Clusters", fontdict=self.Palette.subtitle_font)
         self.Palette.remove_border(self.axclusters)
 
+
         self.fig.canvas.mpl_connect('pick_event', self.pick_axes)
         self.fig.canvas.mpl_connect("key_press_event", self.key_press)
-        self.fig.suptitle('Projected data', fontdict=self.Palette.title_font, fontsize=24)
-
-
-class InteractiveFunction(InteractiveGraph):
-    DEPCALC: Calculator = None
-    LAYOUT: dict = {
-        "ax" : [0.03, 0.25, 0.45, 0.7],
-        "axdep" : [0.52, 0.25, 0.45, 0.7],
-        "axslider" : [0.25, 0.13, 0.5, 0.02],
-        "axcheckbox" : [0.05, 0.02, 0.1, 0.2],
-        "axrandbutton" : [0.25, 0.05, 0.1, 0.05],
-        "axlassobutton" : [0.45, 0.05, 0.1, 0.05],
-        "axclusterbutton" : [0.65, 0.05, 0.1, 0.05],
-        "axclusters" : [0.85, 0.02, 0.1, 0.2],
-        "orientation" : "horizontal"
-    }
-
-    def __init__(self, data, dep_data=None, cov_data=None, mean_data=None, cov_dep=None, mean_dep=None) -> None:
-        super().__init__(data, cov_data, mean_data)
-        #self.DEPCALC = Calculator(data=dep_data, cov=cov_dep, cov_mean=mean_dep, sort = self.CALC.get_sort())
-
-    def update(self, proj: ndarray | None = None):
-        super().update(proj)
-
-
-
-    def build_widgets(self):
-        super().build_widgets()
-        self.axdep = self.fig.add_axes(self.LAYOUT["ax"], facecolor = self.Palette.graph_bg)
-        self.axdep.set_aspect('equal', adjustable='box')
-
-
+        #self.fig.suptitle('Projected data', fontdict=self.Palette.title_font, fontsize=24)
 
 
 # Save to binary file
 if __name__=='__main__':
-    this_graph = InteractiveGraph(data="samples/v1.csv")#, cov_data="samples/p5pexample/cov_mat.csv", mean_data="samples/p5pexample/centre_of_ellipses.csv")
+    #this_graph = InteractiveGraph(data="samples/p5pexample/np.csv", cov_data="samples/p5pexample/cov_mat.csv", mean_data="samples/p5pexample/centre_of_ellipses.csv")
+    this_graph=  InteractiveGraph(data="samples/z331in.CSV")
+    #ifunc = InteractiveFunction(data="samples/v1.csv", dep_data="samples/two_groups.csv")
     #writefile = input("Enter path to save widget (.pickle extension): ")
     #pl.dump((this_graph.PREPLOTS, this_graph.CALC, this_graph.limits), open(writefile,'wb'))
     plt.show()
