@@ -48,3 +48,36 @@ write.csv(mu, "center_topgear.csv",
           row.names = F)
 write.csv(Sigma, "sigma_topgear.csv", 
           row.names = F)
+
+############## second example ###################
+data("WeatherVienna")
+
+weather_summer <- WeatherVienna %>% dplyr::select(-c(`t`, t_max, t_min, p_max, p_min)) %>%
+  drop_na() %>%
+  filter(month %in% c("JUN", "JUL", "AUG")) %>%
+  filter(year >= 1955) %>% 
+  group_by(year) %>%
+  dplyr::select(-month) %>% 
+  summarise(across(.cols = everything(), function(x) mean(x)))
+
+X <- weather_summer %>% dplyr::select(-c(num_frost, num_ice, year))
+rownames(X) <- weather_summer$year
+#> Warning: Setting row names on a tibble is deprecated.
+X <- robStandardize(X)
+as.data.frame(X) |> 
+  rownames_to_column("year") |> 
+  write_csv("data_weather.csv")
+
+set.seed(1)
+MCD <- covMcd(X, alpha = 0.5, nsamp = "best")
+#> Warning in .fastmcd(x, h, nsamp, nmini, kmini, trace = as.integer(trace)): 'nsamp = "best"' allows maximally 100000 subsets;
+#> computing these subsets of size 17 out of 68
+mu <-MCD$center
+Sigma <- MCD$cov
+Sigma_inv <- solve(MCD$cov)
+
+# writing to file
+write.csv(mu, "center_weather.csv",
+          row.names = F)
+write.csv(Sigma, "sigma_weather.csv", 
+          row.names = F)
