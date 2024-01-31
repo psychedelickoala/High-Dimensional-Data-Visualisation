@@ -66,6 +66,7 @@ rownames(X) <- weather_summer$year
 X <- robStandardize(X)
 as.data.frame(X) |> 
   rownames_to_column("year") |> 
+  select(-year) |> 
   write_csv("data_weather.csv")
 
 set.seed(1)
