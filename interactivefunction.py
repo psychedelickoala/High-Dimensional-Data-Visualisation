@@ -49,6 +49,8 @@ class InteractiveFunction(InteractiveGraph):
         self.lassoing = False
         
         P = P_dep = None
+        if self.MAX_SD > 20:
+            self.MAX_SD = 20
         for i in tqdm(range(self.PRECISION), desc = "Finding projections..."):
             sd = i*self.MAX_SD/self.PRECISION
             ind = self.CALC.partition_data(sd)
@@ -206,7 +208,7 @@ class InteractiveFunction(InteractiveGraph):
 if __name__=='__main__':
     #this_graph = InteractiveGraph(data="samples/p5pexample/np.csv", cov_data="samples/p5pexample/cov_mat.csv", mean_data="samples/p5pexample/centre_of_ellipses.csv")
     
-    ifunc = InteractiveFunction(dep_data="samples/v1.csv", data="samples/two_groups.csv")
+    ifunc = InteractiveFunction(dep_data="samples/bphys/testinput.csv", data="samples/bphys/testoutput.csv", cov_data = "samples/bphys/cov.csv")
     #writefile = input("Enter path to save widget (.pickle extension): ")
     #pl.dump((this_graph.PREPLOTS, this_graph.CALC, this_graph.limits), open(writefile,'wb'))
     plt.show()
