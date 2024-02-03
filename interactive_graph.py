@@ -24,6 +24,7 @@ class InteractiveGraph:
         off_white = np.array([0.969, 0.945, 0.929])
         black = np.array([0, 0, 0])
 
+        suggest_colour = np.array([0.329, 0.475, 0.502, 1])
         ellipse_colour = blue
         ellipse_colours = None
         bg_colour = green
@@ -35,20 +36,22 @@ class InteractiveGraph:
         axes_colour = black
 
         #cluster_colours = np.outer(np.array([0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5]), dark_blue)
-        cluster_colours = np.array([[200, 200, 200],
-            [255, 84, 0], [255, 142, 0], [255, 210, 0],
-            [129, 230, 80], [0, 210, 103], [0, 192, 255],
-            [139, 72, 254], [202, 65, 252], [255, 70, 251]
+        cluster_colours = np.array([[80, 80, 80, 255],
+            [255, 84, 0, 255], [255, 142, 0, 255], [255, 210, 0, 255],
+            [129, 230, 80, 255], [0, 210, 103, 255], [0, 192, 255, 255],
+            [139, 72, 254, 255], [202, 65, 252, 255], [255, 70, 251, 255]
         ])/255
 
-        cluster_colours_light = (np.array([1, 1, 1]) - cluster_colours)*0.5 + cluster_colours
+        #cluster_colours_light = (np.array([1, 1, 1]) - cluster_colours)*0.5 + cluster_colours
 
         title_font = {"color": off_white, "family": "serif"}
         subtitle_font = {"color": off_white, "family": "serif", "size": 14}
 
         @classmethod
-        def __init__(cls) -> None:
-            cls.ellipse_colours = np.outer(np.sqrt(np.sqrt(np.reciprocal(np.array(range(1, len(InteractiveGraph.m_dists_using)+1)).astype(float)))), cls.ellipse_colour)
+        def __init__(cls, num_points, num_ellipses) -> None:
+            cls.ellipse_colours = np.outer(np.sqrt(np.sqrt(np.reciprocal(np.array(range(1, num_ellipses+1)).astype(float)))), cls.ellipse_colour)
+            alphas = (np.ones((10, 1)))/np.sqrt(num_points)
+            cls.cluster_colours_light = np.hstack([cls.cluster_colours[:, :3], alphas])
         
         @classmethod
         def remove_border(cls, ax: plt.Axes) -> None:
@@ -88,9 +91,10 @@ class InteractiveGraph:
     dragged = None
     clusters = None
     clusters_in_use = [0]
-    m_dists_using: dict = {"1σ": False, "2σ": False, "3σ": True, "4σ": False, "5σ": False, "6σ": False}
+    m_dists_using: dict = {"1σ": False, "2σ": True, "3σ": False, "5σ": False, "8σ": False, "13σ": False}
     attr_labels = []
     suggest_ind = None
+    lassoing = False
 
     # widgets
     fig = None
@@ -105,10 +109,9 @@ class InteractiveGraph:
 
 
     def __init__(self, data, cov_data = None, mean_data = None, update = True) -> None:
-        self.Palette()
  
         self.CALC = Calculator(data=data, cov=cov_data, cov_mean=mean_data)
-
+        self.Palette(len(self.CALC), len(self.m_dists_using))
         #self.PRECISION: int = preplots if type(preplots) is int else len(preplots)
         self.CONFS: dict = {sdstr : np.sqrt(chi2.ppf((2*norm.cdf(float(sdstr[:-1])) - 1), self.CALC.get_dim())) for sdstr in self.m_dists_using.keys()}
         self.M_DISTS: list[int] = self.CONFS.values()
@@ -168,6 +171,10 @@ class InteractiveGraph:
 
         ax.set_xbound(-calc.get_max_norm(), calc.get_max_norm())
         ax.set_ybound(-calc.get_max_norm(), calc.get_max_norm())
+        
+        # Hide X and Y axes label marks
+        self.axclusters.xaxis.set_tick_params(labelbottom=False)
+        self.axclusters.yaxis.set_tick_params(labelleft=False)
 
         self.fig.canvas.draw_idle()
 
@@ -182,7 +189,7 @@ class InteractiveGraph:
         else:
             point_colours[self.points_ind:] = self.Palette.cluster_colours[self.clusters[self.points_ind:]]
         if self.suggest_ind is not None:
-            point_colours[self.suggest_ind] = np.zeros(3)
+            point_colours[self.suggest_ind] = self.Palette.suggest_colour
         return point_colours
 
 
@@ -240,7 +247,8 @@ class InteractiveGraph:
             pos = np.array([event.xdata*2/calc.get_max_norm(), event.ydata*2/calc.get_max_norm()])
         except:
             self.stop_dragging()
-        precision = 0.00001
+            return
+        precision = 0.0000
         a = np.delete(u, self.dragged)
         b = np.delete(v, self.dragged)
         A = pos[0] if np.linalg.norm(pos) < (1-precision) else (1 - precision)*(pos[0])/np.linalg.norm(pos)
@@ -262,6 +270,10 @@ class InteractiveGraph:
             au, bu = c*m + s*ap, c*m + s*bp
         
         except RuntimeWarning: # all other vectors in a line
+            u[self.dragged] = pos[0]
+            v[self.dragged] = pos[1]
+            u, v = self.CALC.orthonormalise(u, v)
+            '''
             new_line_proj = np.array([[B**2, -A*B], [-A*B, A**2]])
             to_proj = np.vstack([a, b])
             new_vecs = new_line_proj @ to_proj
@@ -276,10 +288,12 @@ class InteractiveGraph:
                 elif np.abs(B) == 1:
                     au = new_vecs[0]/np.linalg.norm(new_vecs[0])
                     bu = new_vecs[1]
+            '''
+        else:
 
-        a, b = au*np.sqrt(1-A**2), bu*np.sqrt(1-B**2)
-        u = np.insert(a, self.dragged, A)
-        v = np.insert(b, self.dragged, B)
+            a, b = au*np.sqrt(1-A**2), bu*np.sqrt(1-B**2)
+            u = np.insert(a, self.dragged, A)
+            v = np.insert(b, self.dragged, B)
         
         #u[self.dragged] = event.xdata*2/self.LIMIT
         #v[self.dragged] = event.ydata*2/self.LIMIT
@@ -357,6 +371,8 @@ class InteractiveGraph:
 
     def add_cluster(self):
         if self.num_clusters == 9:
+            self.lasso.disconnect_events()
+            self.suggest_ind = None
             return
         self.num_clusters += 1
         this_cluster = [i for i in range(10) if i not in self.clusters_in_use][0]
@@ -375,6 +391,58 @@ class InteractiveGraph:
         self.lasso.disconnect_events()
         #self.update()
 
+    def clear_clusters(self):
+        self.clusters = np.array([0]*len(self.CALC))
+        self.num_clusters = 0
+        self.clusters_in_use = [0]
+        self.axclusters.cla()
+        # Hide X and Y axes tick marks
+        self.axclusters.set_xticks([])
+        self.axclusters.set_yticks([])
+        self.update()
+
+    def auto_cluster(self, event = None):
+        self.clear_clusters()
+        self.ax.set_title("Clustering...")
+        self.fig.canvas.draw()
+        num_clusters, new_clusters = self.CALC.get_clusters(self.points_ind)
+        self.num_clusters = num_clusters
+        #for i in range(len(new_clusters)):
+        #    new_clusters[i] = 0 if new_clusters[i] > 9 else new_clusters[i]
+        if type(self.points_ind) is np.ndarray:
+            self.clusters[self.points_ind] = new_clusters
+        else:
+            self.clusters[self.points_ind:] = new_clusters
+        for i in range(1, min(num_clusters + 1, 10)):
+            self.clusters_in_use.append(i)
+            self.axclusters.add_patch(Rectangle(
+                self.LAYOUT["cluster"][i][0], 
+                self.LAYOUT["cluster"][i][1],
+                self.LAYOUT["cluster"][i][2],
+                color = self.Palette.cluster_colours[i],
+                linewidth = 0,
+                picker = True,
+                gid = str(i)
+            ))
+        self.ax.set_title('')
+        self.update()
+
+    def print_info(self, event = None):
+        print("\n~~ CONTROLS ~~")
+        print("Key presses")
+        print("R: Show random projection")
+        print("C: Clear all clusters")
+        print("N: Print CSV file line numbers of selected points")
+        print("M: Print the current projection matrix")
+        print("\nCluster controls")
+        print("Right click: Select points in cluster and show optimal projection")
+        print("Double click: Remove cluster")
+        print("\nLasso controls")
+        print("Press Y: Lasso selection becomes new cluster")
+        print("Press Enter: Select lassoed points and show optimal projection")
+        print("~~~")
+
+
     def key_press(self, event):
         if self.lassoing:
             self.lassoing = False
@@ -388,14 +456,17 @@ class InteractiveGraph:
         elif event.key == "r":
             self.show_random(event)
 
+        elif event.key == "c":
+            self.clear_clusters()
+
         elif event.key == "m":
-            print("~~ SELECTED PROJECTION ~~")
+            print("\n~~ SELECTED PROJECTION ~~")
             print(np.round(self.curr_proj, 4))
 
         elif event.key == "n":
             ids = self.CALC.get_sort()[self.points_ind] if type(self.points_ind) is np.ndarray else self.CALC.get_sort()[self.points_ind:]
-            print("~~ SELECTED POINT IDS ~~")
-            print(ids)
+            print("\n~~ SELECTED POINT IDS ~~")
+            print(np.sort(ids) + self.CALC.csv_dist)
 
     def show_ellipse(self, label):
         self.m_dists_using[label] = not self.m_dists_using[label]
@@ -409,7 +480,7 @@ class InteractiveGraph:
         self.axcheckbox = self.fig.add_axes(self.LAYOUT["axcheckbox"], facecolor=self.Palette.slider_bg)
         self.axrandbutton = self.fig.add_axes(self.LAYOUT["axrandbutton"])
         self.axlassobutton = self.fig.add_axes(self.LAYOUT["axlassobutton"])
-        #self.axclusterbutton = self.fig.add_axes(self.LAYOUT["axclusterbutton"])
+        self.axclusterbutton = self.fig.add_axes(self.LAYOUT["axclusterbutton"])
         self.axclusters = self.fig.add_axes(self.LAYOUT["axclusters"], facecolor=self.Palette.slider_bg)
 
         # Hide X and Y axes label marks
@@ -456,13 +527,13 @@ class InteractiveGraph:
             self.m_checkbox.on_clicked(self.show_ellipse)
 
 
-        # Button
+        # Info Button
 
         self.Palette.remove_border(self.axrandbutton)
 
         self.rand_button = Button(
             ax=self.axrandbutton,
-            label = "Random",
+            label = "Print help",
             color = self.Palette.slider_colour,
             hovercolor = self.Palette.blue
         )
@@ -470,9 +541,9 @@ class InteractiveGraph:
         self.rand_button.label.set_color(self.Palette.off_white)
         self.rand_button.label.set_font('serif')
         self.rand_button.label.set_fontsize(14)
-        self.rand_button.on_clicked(self.show_random)
+        self.rand_button.on_clicked(self.print_info)
 
-        # Button
+        # Lasso Button
 
         self.Palette.remove_border(self.axlassobutton)
 
@@ -488,7 +559,20 @@ class InteractiveGraph:
         self.lasso_button.label.set_fontsize(14)
         self.lasso_button.on_clicked(self.lasso_select)
 
+        # cluster button
+        self.Palette.remove_border(self.axclusterbutton)
 
+        self.cluster_button = Button(
+            ax=self.axclusterbutton,
+            label = "Auto cluster",
+            color = self.Palette.slider_colour,
+            hovercolor = self.Palette.blue
+        )
+
+        self.cluster_button.label.set_color(self.Palette.off_white)
+        self.cluster_button.label.set_font('serif')
+        self.cluster_button.label.set_fontsize(14)
+        self.cluster_button.on_clicked(self.auto_cluster)
 
 
 
@@ -504,7 +588,7 @@ class InteractiveGraph:
 # Save to binary file
 if __name__=='__main__':
     #this_graph = InteractiveGraph(data="samples/p5pexample/np.csv", cov_data="samples/p5pexample/cov_mat.csv", mean_data="samples/p5pexample/centre_of_ellipses.csv")
-    this_graph=  InteractiveGraph(data="samples/z331in.CSV")
+    this_graph=  InteractiveGraph(data="samples/spaced_clusters.csv")
     #ifunc = InteractiveFunction(data="samples/v1.csv", dep_data="samples/two_groups.csv")
     #writefile = input("Enter path to save widget (.pickle extension): ")
     #pl.dump((this_graph.PREPLOTS, this_graph.CALC, this_graph.limits), open(writefile,'wb'))

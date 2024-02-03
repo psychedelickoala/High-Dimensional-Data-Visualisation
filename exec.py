@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import argparse
-from gui import InteractiveGraph
-from interactivefunction import InteractiveFunction
+from interactive_graph import InteractiveGraph
+from interactive_function import InteractiveFunction
 
  # parse arguments
 parser = argparse.ArgumentParser()
@@ -28,6 +28,4 @@ if args.dependent_data is None:
     this_graph = InteractiveGraph(data=data, cov_data=ci, mean_data=mi)
 else:
     this_func = InteractiveFunction(data=data, dep_data=dd, cov_data=ci, mean_data=mi, cov_dep=cd, mean_dep=md)
-#writefile = input("Enter path to save widget (.pickle extension): ")
-#pl.dump((this_graph.PREPLOTS, this_graph.CALC, this_graph.limits), open(writefile,'wb'))
 plt.show()

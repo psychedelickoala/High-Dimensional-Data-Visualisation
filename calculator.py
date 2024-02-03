@@ -68,9 +68,6 @@ class Calculator:
     def get_max_norm(self) -> float:
         return max(np.linalg.norm(self.__data, axis = 0))
 
-    def get_confidence_dist(self, conf: float) -> np.ndarray:
-        return self.__sds[int(len(self)*conf)] # delete func ?
-
     def partition_data(self, sd: float) -> tuple[np.ndarray]:
         ind = np.searchsorted(self.__sds, sd)
         return ind
@@ -98,8 +95,10 @@ class Calculator:
             except ValueError:
                 unsorted_data = np.loadtxt(fname = data, dtype=float, delimiter=",", skiprows=1).T
                 self.__attribute_names = np.loadtxt(fname = data, dtype=str, delimiter=",", skiprows=0, max_rows=1)
+                self.csv_dist = 2
             else:
                 self.__attribute_names = np.array(["e" + str(i) for i in range(unsorted_data.shape[0])])
+                self.csv_dist = 1
         else:
             unsorted_data = data
 
@@ -139,12 +138,15 @@ class Calculator:
         self.__ellipsoid: np.ndarray = np.linalg.inv(self.__covariance)
 
     def get_clusters(self, inds: np.ndarray | int) -> list[np.ndarray]:
+
+
         print("starting")
         if type(inds) is not np.ndarray:
             inds = np.array(range(inds, len(self)))
 
         B = np.linalg.cholesky(self.__ellipsoid).T
         points = B @ self.__data[:, inds]
+        
         num_points = points.shape[1]
 
         dist_mat = np.zeros((num_points, num_points))  # csr_array((num_points, num_points))
@@ -157,21 +159,36 @@ class Calculator:
 
         print("getting minimum spanning tree")
         X = minimum_spanning_tree(csr_array(dist_mat))
-        upper_bound = 3 * X.data[int(0.75*len(X.data))]
+        #upper_bound = 3 * X.data[int(0.75*len(X.data))]
+        #sorted_edges = np.sort(X.data)
+        sort_inds = np.argsort(X.data)
+        #sorted_edges = X.data[sort_inds]
+        upper_bound = 2*X.data[sort_inds[len(X.data)//5]]
+        """
+        for i in range(len(X.data) -1, len(X.data) -10, -1):
+            if X.data[sort_inds[i]] < upper_bound:
+                break
+            X.data[sort_inds[i]] = 0
+        """
         X.data = np.array([edge if edge < upper_bound else 0 for edge in X.data])
         X.eliminate_zeros()
         print("getting connected components")
         num_clusters, labels = connected_components(X, directed=False)
-        print("listing clusters")
-        clusters = []
-        for i in range(num_clusters):
-            clusters.append(inds[np.where(labels==i)])
+        if num_clusters > 9:
+            print("cancelling")
+            new_labels = np.array([0]*num_points)
+            counts = np.unique(labels, return_counts=True)[1]
+            top = np.argsort(counts)[-9:] # 9 biggest clusters
 
-        return clusters
+            for i in range(9):
+                new_labels[np.where(labels == top[i])[0]] = 9-i
+                
+            return 9, new_labels
+
+        return num_clusters, labels + 1
 
     def get_cov_mean(self) -> np.ndarray:
         return self.__cov_mean
-
 
     def set_ellipse_res(self, ellipse_res: float) -> None:
         """
