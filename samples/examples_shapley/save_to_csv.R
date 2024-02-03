@@ -31,6 +31,7 @@ X <- robStandardize(X)
 # X is preprocessed data, save to csv
 as.data.frame(X) |> 
   rownames_to_column("ID") |> 
+  select(-ID) |> 
   write_csv("data_topgear.csv")
 
 # for comparison we also export robust estimates
