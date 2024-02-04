@@ -449,6 +449,9 @@ class InteractiveGraph:
                 self.move_by_select()
             elif event.key == "y":
                 self.add_cluster()
+            else:
+                self.suggest_ind = None
+                self.lasso.disconnect_events()
             self.update()
 
         elif event.key == "r":

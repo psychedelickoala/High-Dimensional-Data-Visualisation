@@ -13,3 +13,5 @@ __pycache__/calculator.cpython-311.pyc
 __pycache__/calculator.cpython-311.pyc
 __pycache__/gui.cpython-311.pyc
 .Rproj.user
+__pycache__/interactive_function.cpython-311.pyc
+*.pyc
