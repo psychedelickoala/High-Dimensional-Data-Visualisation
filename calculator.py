@@ -3,6 +3,7 @@ from scipy.stats import norm, chi2
 import matplotlib.pyplot as plt
 from scipy.sparse import csr_array
 from scipy.sparse.csgraph import minimum_spanning_tree, connected_components
+from tqdm import tqdm as tqbar
 
 
 class Calculator:
@@ -140,52 +141,43 @@ class Calculator:
     def get_clusters(self, inds: np.ndarray | int) -> list[np.ndarray]:
 
 
-        print("starting")
         if type(inds) is not np.ndarray:
             inds = np.array(range(inds, len(self)))
 
-        B = np.linalg.cholesky(self.__ellipsoid).T
-        points = B @ self.__data[:, inds]
+        #B = np.linalg.cholesky(self.__ellipsoid).T
+        points = self.__data[:, inds]
         
         num_points = points.shape[1]
 
         dist_mat = np.zeros((num_points, num_points))  # csr_array((num_points, num_points))
-        print("getting complete graph")
-        for i in range(num_points):
-            if i%100 == 0:
-                print(f"progress: {i} of {num_points}")
+        for i in tqbar(range(num_points), desc = "Building distances matrix..."):
             for j in range(i, num_points):
                 dist_mat[i, j] = dist_mat[j, i] = np.linalg.norm((points[:, i] - points[:, j]))
 
-        print("getting minimum spanning tree")
+        print("Finding minimum spanning tree...")
         X = minimum_spanning_tree(csr_array(dist_mat))
         #upper_bound = 3 * X.data[int(0.75*len(X.data))]
         #sorted_edges = np.sort(X.data)
-        sort_inds = np.argsort(X.data)
+        std_dev = np.std(X.data)
+        mean = np.mean(X.data)
+        upper_bound = mean + 3*std_dev
+        #sort_inds = np.argsort(X.data)
         #sorted_edges = X.data[sort_inds]
-        upper_bound = 2*X.data[sort_inds[len(X.data)//5]]
-        """
-        for i in range(len(X.data) -1, len(X.data) -10, -1):
-            if X.data[sort_inds[i]] < upper_bound:
-                break
-            X.data[sort_inds[i]] = 0
-        """
+        #upper_bound = 1.5*(X.data[sort_inds[3*len(X.data)//4]] - X.data[sort_inds[len(X.data)//4]])+X.data[sort_inds[3*len(X.data)//4]]
+
         X.data = np.array([edge if edge < upper_bound else 0 for edge in X.data])
         X.eliminate_zeros()
-        print("getting connected components")
         num_clusters, labels = connected_components(X, directed=False)
-        if num_clusters > 9:
-            print("cancelling")
-            new_labels = np.array([0]*num_points)
-            counts = np.unique(labels, return_counts=True)[1]
-            top = np.argsort(counts)[-9:] # 9 biggest clusters
+        num_clusters = 9 if num_clusters > 9 else num_clusters
 
-            for i in range(9):
-                new_labels[np.where(labels == top[i])[0]] = 9-i
-                
-            return 9, new_labels
+        new_labels = np.array([0]*num_points)
+        counts = np.unique(labels, return_counts=True)[1]
+        top = np.argsort(counts)[-num_clusters:] # 9 biggest clusters
 
-        return num_clusters, labels + 1
+        for i in range(num_clusters):
+            new_labels[np.where(labels == top[i])[0]] = num_clusters-i
+
+        return num_clusters, new_labels
 
     def get_cov_mean(self) -> np.ndarray:
         return self.__cov_mean
@@ -239,7 +231,6 @@ class Calculator:
     def __den(u: np.ndarray, v: np.ndarray, C:np.ndarray) -> float:
         """Denominator of function on u and v to maximise"""
         return (u @ C @ u.T) * (v @ C @ v.T) - ((u @ C @ v.T)**2)
-
 
     def total_m_dist(self, u: np.ndarray, v: np.ndarray, W: np.ndarray, mod: float | None = None) -> float:
         """

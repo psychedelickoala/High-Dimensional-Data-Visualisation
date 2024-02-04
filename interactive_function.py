@@ -35,8 +35,6 @@ class InteractiveFunction(InteractiveGraph):
     m_dists_using_dep: dict = {"1σ": False, "2σ": True, "3σ": False, "5σ": False, "8σ": False}
 
     def __init__(self, data, dep_data=None, cov_data=None, mean_data=None, cov_dep=None, mean_dep=None) -> None:
-
- 
         self.CALC = Calculator(data=data, cov=cov_data, cov_mean=mean_data)
 
         self.Palette(len(self.CALC), len(self.m_dists_using))
@@ -214,7 +212,7 @@ class InteractiveFunction(InteractiveGraph):
 
 
 
-
+'''
 # Save to binary file
 if __name__=='__main__':
     #this_graph = InteractiveGraph(data="samples/p5pexample/np.csv", cov_data="samples/p5pexample/cov_mat.csv", mean_data="samples/p5pexample/centre_of_ellipses.csv")
@@ -223,3 +221,4 @@ if __name__=='__main__':
     #writefile = input("Enter path to save widget (.pickle extension): ")
     #pl.dump((this_graph.PREPLOTS, this_graph.CALC, this_graph.limits), open(writefile,'wb'))
     plt.show()
+'''

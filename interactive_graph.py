@@ -192,7 +192,6 @@ class InteractiveGraph:
             point_colours[self.suggest_ind] = self.Palette.suggest_colour
         return point_colours
 
-
     def pick_axes(self, event, calc = None, proj = None, update = True):
         if calc is None:
             calc = self.CALC
@@ -442,7 +441,6 @@ class InteractiveGraph:
         print("Press Enter: Select lassoed points and show optimal projection")
         print("~~~")
 
-
     def key_press(self, event):
         if self.lassoing:
             self.lassoing = False
@@ -584,7 +582,7 @@ class InteractiveGraph:
         self.fig.canvas.mpl_connect("key_press_event", self.key_press)
         #self.fig.suptitle('Projected data', fontdict=self.Palette.title_font, fontsize=24)
 
-
+'''
 # Save to binary file
 if __name__=='__main__':
     #this_graph = InteractiveGraph(data="samples/p5pexample/np.csv", cov_data="samples/p5pexample/cov_mat.csv", mean_data="samples/p5pexample/centre_of_ellipses.csv")
@@ -593,3 +591,4 @@ if __name__=='__main__':
     #writefile = input("Enter path to save widget (.pickle extension): ")
     #pl.dump((this_graph.PREPLOTS, this_graph.CALC, this_graph.limits), open(writefile,'wb'))
     plt.show()
+'''
