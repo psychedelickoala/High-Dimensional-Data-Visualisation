@@ -131,3 +131,5 @@ A $p\times p$ covariance matrix should have exactly $p$ columns and $p$ rows, wi
 A $p$ dimensional centre consists of $p$ numbers. It is equally valid for this to be in one row or one column. Again, no additional information should be present.
 
 
+
+
