@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 from matplotlib.backend_bases import MouseButton
 from numpy import ndarray
 from tqdm import tqdm
@@ -69,64 +68,51 @@ class InteractiveFunction(InteractiveGraph):
 
 
     def update(self, proj: ndarray | None = None, dep_proj = None):
-        if proj is not None:
-            self.curr_proj = proj
+        super().update(proj)
+
         if dep_proj is not None:
             self.curr_dep_proj = dep_proj
 
-        self.ax.cla()
         self.axdep.cla()
 
         # points
         point_colours = self.get_point_colours()
-        proj_mean = self.curr_proj @ self.CALC.get_cov_mean()
-        proj_points = self.curr_proj @ self.CALC.get_data() - proj_mean
-        self.curr_collection = self.ax.scatter(proj_points[0], proj_points[1], marker = ".", c=point_colours)
-
         proj_dep_mean = self.curr_dep_proj @ self.DEPCALC.get_cov_mean()
         proj_dep_points = self.curr_dep_proj @ self.DEPCALC.get_data() - proj_dep_mean
         self.axdep.scatter(proj_dep_points[0], proj_dep_points[1], marker = ".", c = point_colours)
 
-        
-        # ellipses
-        ellipses = self.CALC.get_proj_ellipses(self.curr_proj, [self.CONFS[m] for m in self.CONFS if self.m_dists_using[m]])
-        for i, ellipse in enumerate(ellipses):
-            self.ax.plot(ellipse[0], ellipse[1], c=self.Palette.ellipse_colours[i], linewidth = 2)
 
+        # ellipses
         dep_ellipses = self.DEPCALC.get_proj_ellipses(self.curr_dep_proj, [self.CONFS[m] for m in self.CONFS if self.m_dists_using_dep[m]])
-        for i, ellipse in enumerate(dep_ellipses):
+        elcolours = [i for i, v in enumerate(self.m_dists_using_dep.values()) if v]
+        for i, ellipse in zip(elcolours, dep_ellipses):
             self.axdep.plot(ellipse[0], ellipse[1], c=self.Palette.ellipse_colours[i], linewidth = 2)
 
         # axes
         i = 0
-        self.attr_labels.clear()
-        for proj_axis in self.curr_proj.T:
-            self.ax.plot([0, proj_axis[0]*self.CALC.get_max_norm()*0.5], [0, proj_axis[1]*self.CALC.get_max_norm()*0.5], c = self.Palette.axes_colour, linewidth = 1)
-            new_label = self.ax.text(proj_axis[0]*self.CALC.get_max_norm()*0.5, proj_axis[1]*self.CALC.get_max_norm()*0.5, self.CALC.get_attrs()[i], picker=True)
-            new_label.set_bbox(dict(facecolor=self.Palette.graph_bg, alpha=0.7, linewidth=0, boxstyle=BoxStyle.Round(pad=0.05)))
-            self.attr_labels.append(new_label)
-            i += 1
-
-        i = 0
         self.dep_attr_labels.clear()
-        for proj_axis in self.curr_dep_proj.T:
-            self.axdep.plot([0, proj_axis[0]*self.DEPCALC.get_max_norm()*0.5], [0, proj_axis[1]*self.DEPCALC.get_max_norm()*0.5], c = self.Palette.axes_colour, linewidth = 1)
-            new_label = self.axdep.text(proj_axis[0]*self.DEPCALC.get_max_norm()*0.5, proj_axis[1]*self.DEPCALC.get_max_norm()*0.5, self.DEPCALC.get_attrs()[i], picker=True)
-            new_label.set_bbox(dict(facecolor=self.Palette.graph_bg, alpha=0.7, linewidth=0, boxstyle=BoxStyle.Round(pad=0.05)))
-            self.dep_attr_labels.append(new_label)
-            i += 1
+        if self.xd0*self.xd1 < 0 and self.yd0*self.yd1 < 0:  # origin is in frame
+            for proj_axis in self.curr_dep_proj.T*self.axdeplength:
+                self.axdep.plot([0, proj_axis[0]], [0, proj_axis[1]], c = self.Palette.axes_colour, linewidth = 1)
+                new_label = self.axdep.text(proj_axis[0], proj_axis[1], self.DEPCALC.get_attrs()[i], picker=True)
+                new_label.set_bbox(dict(facecolor=self.Palette.graph_bg, alpha=0.7, linewidth=0, boxstyle=BoxStyle.Round(pad=0.05)))
+                self.dep_attr_labels.append(new_label)
+                i += 1
         
+        # bounds
+        self.axdep.set_xbound(self.xd0, self.xd1)
+        self.axdep.set_ybound(self.yd0, self.yd1)
 
-        self.ax.set_xbound(-self.CALC.get_max_norm(), self.CALC.get_max_norm())
-        self.ax.set_ybound(-self.CALC.get_max_norm(), self.CALC.get_max_norm())
-        self.axdep.set_xbound(-self.DEPCALC.get_max_norm(), self.DEPCALC.get_max_norm())
-        self.axdep.set_ybound(-self.DEPCALC.get_max_norm(), self.DEPCALC.get_max_norm())
-
-        # Hide X and Y axes label marks
-        self.axclusters.xaxis.set_tick_params(labelbottom=False)
-        self.axclusters.yaxis.set_tick_params(labelleft=False)
+        self.axdep.callbacks.connect("xlim_changed", self.zoomed_dep)
+        self.axdep.callbacks.connect("ylim_changed", self.zoomed_dep)
 
         self.fig.canvas.draw_idle()
+
+    def zoomed_dep(self, event):
+        self.xd0, self.xd1 = event.get_xlim()
+        self.yd0, self.yd1 = event.get_ylim()
+        self.axdeplength = min(self.xd1-self.xd0, self.yd1-self.yd0)*0.25
+        self.update()
 
     def show_random(self, event):
         P = self.CALC.get_random_plane()
@@ -168,7 +154,7 @@ class InteractiveFunction(InteractiveGraph):
     
     def drag_axes(self, event):
         if self.dragging_dep:
-            self.curr_dep_proj = super().drag_axes(event, proj = self.curr_dep_proj, calc = self.DEPCALC, update = False)
+            self.curr_dep_proj = super().drag_axes(event, proj = self.curr_dep_proj, axlength = self.axdeplength, update = False)
         else:
             self.curr_proj = super().drag_axes(event, update = False)
         self.update()
@@ -181,7 +167,11 @@ class InteractiveFunction(InteractiveGraph):
         super().build_widgets(ellipses=False)
         self.axdep = self.fig.add_axes(self.LAYOUT["axdep"], facecolor = self.Palette.graph_bg)
         self.axcheckbox2 = self.fig.add_axes(self.LAYOUT["axcheckbox2"], facecolor = self.Palette.slider_bg)
+        
         self.axdep.set_aspect('equal', adjustable='box')
+        self.xd0 = self.yd0 = -self.DEPCALC.get_max_norm()
+        self.xd1 = self.yd1 = self.DEPCALC.get_max_norm()
+        self.axdeplength = 0.5*self.DEPCALC.get_max_norm()
 
         self.Palette.remove_border(self.axcheckbox)
         self.Palette.remove_border(self.axcheckbox2)

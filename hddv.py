@@ -4,18 +4,6 @@ import matplotlib.pyplot as plt
 import argparse
 from interactive_graph import InteractiveGraph
 from interactive_function import InteractiveFunction
-from matplotlib.backend_bases import MouseButton
-from tqdm import tqdm
-import numpy as np
-from scipy.stats import norm, chi2
-from calculator import Calculator
-from matplotlib.widgets import Button, Slider, CheckButtons, LassoSelector
-from matplotlib.patches import BoxStyle, Rectangle
-from matplotlib.path import Path
-from scipy.stats import norm, chi2
-from scipy.sparse import csr_array
-from scipy.sparse.csgraph import minimum_spanning_tree, connected_components
-import warnings
 
 # parse arguments
 parser = argparse.ArgumentParser()

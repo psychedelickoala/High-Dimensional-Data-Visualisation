@@ -91,7 +91,7 @@ class InteractiveGraph:
     dragged = None
     clusters = None
     clusters_in_use = [0]
-    m_dists_using: dict = {"1σ": False, "2σ": True, "3σ": False, "5σ": False, "8σ": False, "13σ": False}
+    m_dists_using: dict = {"1σ": False, "2σ": True, "3σ": False, "5σ": False, "8σ": False}
     attr_labels = []
     suggest_ind = None
     lassoing = False
@@ -133,50 +133,45 @@ class InteractiveGraph:
         if update:
             self.update(self.PREPLOTS[self.points_ind])
 
+
     def update(self, proj: np.ndarray | None = None, ax = None, calc = None, labels = None):
         if proj is not None:
             self.curr_proj = proj
-        if ax is None:
-            ax = self.ax
-        if calc is None:
-            calc = self.CALC
-        if labels is None:
-            labels = self.attr_labels
 
-        ax.cla()
+        self.ax.cla()
 
         # points
         point_colours = self.get_point_colours()
-        proj_mean = self.curr_proj @ calc.get_cov_mean()
-        proj_points = self.curr_proj @ calc.get_data() - proj_mean
-        self.curr_collection = ax.scatter(proj_points[0], proj_points[1], marker = ".")
-        self.curr_collection.set_facecolor(point_colours)
+        proj_mean = self.curr_proj @ self.CALC.get_cov_mean()
+        proj_points = self.curr_proj @ self.CALC.get_data() - proj_mean
+        self.curr_collection = self.ax.scatter(proj_points[0], proj_points[1], c = point_colours, marker = ".")
         
         # ellipses
-        ellipses = calc.get_proj_ellipses(self.curr_proj, [self.CONFS[m] for m in self.CONFS if self.m_dists_using[m]])
-        for i, ellipse in enumerate(ellipses):
-            ax.plot(ellipse[0], ellipse[1], c=self.Palette.ellipse_colours[i], linewidth = 2)
+        ellipses = self.CALC.get_proj_ellipses(self.curr_proj, [self.CONFS[m] for m in self.CONFS if self.m_dists_using[m]])
+        elcolours = [i for i, v in enumerate(self.m_dists_using.values()) if v]
+        for i, ellipse in zip(elcolours, ellipses):
+            self.ax.plot(ellipse[0], ellipse[1], c=self.Palette.ellipse_colours[i], linewidth = 2)
 
         # axes
         i = 0
-        labels.clear()
-        for proj_axis in self.curr_proj.T:
-            ax.plot([0, proj_axis[0]*calc.get_max_norm()*0.5], [0, proj_axis[1]*calc.get_max_norm()*0.5], c = self.Palette.axes_colour, linewidth = 1)
-            new_label = ax.text(proj_axis[0]*calc.get_max_norm()*0.5, proj_axis[1]*calc.get_max_norm()*0.5, calc.get_attrs()[i], picker=True)
-            #new_label.set_picker(True)
-            new_label.set_bbox(dict(facecolor=self.Palette.graph_bg, alpha=0.7, linewidth=0, boxstyle=BoxStyle.Round(pad=0.05)))
-            labels.append(new_label)
-            i += 1
+        self.attr_labels.clear()
+        if self.x0*self.x1 < 0 and self.y0*self.y1 < 0:  # origin is in frame
+            for proj_axis in self.curr_proj.T*self.axlength:
+                self.ax.plot([0, proj_axis[0]], [0, proj_axis[1]], c = self.Palette.axes_colour, linewidth = 1)
+                new_label = self.ax.text(proj_axis[0], proj_axis[1], self.CALC.get_attrs()[i], picker=True)
+                new_label.set_bbox(dict(facecolor=self.Palette.graph_bg, alpha=0.7, linewidth=0, boxstyle=BoxStyle.Round(pad=0.05)))
+                self.attr_labels.append(new_label)
+                i += 1
         
+        # bounds
+        self.ax.set_xbound(self.x0, self.x1)
+        self.ax.set_ybound(self.y0, self.y1)
 
-        ax.set_xbound(-calc.get_max_norm(), calc.get_max_norm())
-        ax.set_ybound(-calc.get_max_norm(), calc.get_max_norm())
-        
-        # Hide X and Y axes label marks
-        self.axclusters.xaxis.set_tick_params(labelbottom=False)
-        self.axclusters.yaxis.set_tick_params(labelleft=False)
+        self.ax.callbacks.connect("xlim_changed", self.zoomed)
+        self.ax.callbacks.connect("ylim_changed", self.zoomed)
 
         self.fig.canvas.draw_idle()
+
 
     def get_point_colours(self) -> np.ndarray:
         point_colours = self.Palette.cluster_colours_light[self.clusters]
@@ -191,6 +186,13 @@ class InteractiveGraph:
         if self.suggest_ind is not None:
             point_colours[self.suggest_ind] = self.Palette.suggest_colour
         return point_colours
+
+    def zoomed(self, event):
+        self.x0, self.x1 = event.get_xlim()
+        self.y0, self.y1 = event.get_ylim()
+        self.axlength = min(self.x1-self.x0, self.y1-self.y0)*0.25
+        self.update()
+
 
     def pick_axes(self, event, calc = None, proj = None, update = True):
         if calc is None:
@@ -236,14 +238,14 @@ class InteractiveGraph:
             self.drag_id = self.fig.canvas.mpl_connect("motion_notify_event", self.drag_axes)
             self.release_id = self.fig.canvas.mpl_connect('button_release_event', self.stop_dragging)
             
-    def drag_axes(self, event, proj = None, calc = None, update = True):
+    def drag_axes(self, event, proj = None, axlength = None, update = True):
         if proj is None:
             proj = self.curr_proj
-        if calc is None:
-            calc = self.CALC
+        if axlength is None:
+            axlength = self.axlength
         u, v = proj[0], proj[1]
         try:
-            pos = np.array([event.xdata*2/calc.get_max_norm(), event.ydata*2/calc.get_max_norm()])
+            pos = np.array([event.xdata/axlength, event.ydata/axlength])
         except:
             self.stop_dragging()
             return
@@ -493,6 +495,11 @@ class InteractiveGraph:
         self.axclusters.set_yticks([])
 
         self.ax.set_aspect('equal', adjustable='box')
+        self.x0 = self.y0 = -self.CALC.get_max_norm()
+        self.x1 = self.y1 = self.CALC.get_max_norm()
+        self.axlength = 0.5*self.CALC.get_max_norm()
+
+
 
         # Slider
 
