@@ -1,8 +1,8 @@
+import matplotlib.pyplot as plt
 from matplotlib.backend_bases import MouseButton
 from numpy import ndarray
 from tqdm import tqdm
 import numpy as np
-from scipy.stats import norm, chi2
 from calculator import Calculator
 from interactive_graph import InteractiveGraph
 from matplotlib.widgets import CheckButtons
@@ -10,8 +10,14 @@ from matplotlib.patches import BoxStyle
 import warnings
 warnings.filterwarnings("error")
 
-
+# Including a second dataset
 class InteractiveFunction(InteractiveGraph):
+
+    """
+        Stores and manages two sets of data.
+    """
+
+    # constant
     DEPCALC: Calculator = None
     LAYOUT: dict = {
         "ax" : [0.03, 0.25, 0.45, 0.7],
@@ -19,55 +25,63 @@ class InteractiveFunction(InteractiveGraph):
         "axslider" : [0.25, 0.13, 0.5, 0.02],
         "axcheckbox" : [0.05, 0.05, 0.075, 0.15],
         "axcheckbox2" : [0.125, 0.05, 0.075, 0.15],
-        "axrandbutton" : [0.25, 0.05, 0.1, 0.05],
+        "axinfobutton" : [0.25, 0.05, 0.1, 0.05],
         "axlassobutton" : [0.45, 0.05, 0.1, 0.05],
         "axclusterbutton" : [0.65, 0.05, 0.1, 0.05],
         "axclusters" : [0.8, 0.05, 0.15, 0.15],
         "orientation" : "horizontal",
+        "cluster" : [None,
+            [(0.00, 0.67), 0.33, 0.33], [(0.33, 0.67), 0.34, 0.33], [(0.67, 0.67), 0.33, 0.33],
+            [(0.00, 0.33), 0.33, 0.34], [(0.33, 0.33), 0.34, 0.34], [(0.67, 0.33), 0.33, 0.34],
+            [(0.00, 0.00), 0.33, 0.33], [(0.33, 0.00), 0.34, 0.33], [(0.67, 0.00), 0.33, 0.33]
+        ]
     }
-    LAYOUT["cluster"] = [None,
-        [(0.00, 0.67), 0.33, 0.33], [(0.33, 0.67), 0.34, 0.33], [(0.67, 0.67), 0.33, 0.33],
-        [(0.00, 0.33), 0.33, 0.34], [(0.33, 0.33), 0.34, 0.34], [(0.67, 0.33), 0.33, 0.34],
-        [(0.00, 0.00), 0.33, 0.33], [(0.33, 0.00), 0.34, 0.33], [(0.67, 0.00), 0.33, 0.33]
-    ]
-    m_dists_using: dict = {"1σ": False, "2σ": True, "3σ": False, "5σ": False, "8σ": False}
+
+    # variable
     m_dists_using_dep: dict = {"1σ": False, "2σ": True, "3σ": False, "5σ": False, "8σ": False}
+    dep_attr_labels: list = []
+    axdeplength: float = None
+    xd0 = xd1 = yd0 = yd1 = None
+    dragging_dep: bool = None
 
+    # widgets
+    axdep: plt.Axes = None
+    axcheckbox2: plt.Axes = None
+    m_checkbox2: CheckButtons = None
+
+    
     def __init__(self, data, dep_data=None, cov_data=None, mean_data=None, cov_dep=None, mean_dep=None) -> None:
-        self.CALC = Calculator(data=data, cov=cov_data, cov_mean=mean_data)
-
-        self.Palette(len(self.CALC), len(self.m_dists_using))
+        """Initialise interactive function"""
+        super().__init__(data, cov_data, mean_data, update = False)
         self.DEPCALC = Calculator(data=dep_data, cov=cov_dep, cov_mean=mean_dep, sort = self.CALC.get_sort())
-
-        self.CONFS: dict = {sdstr : np.sqrt(chi2.ppf((2*norm.cdf(float(sdstr[:-1])) - 1), self.CALC.get_dim())) for sdstr in self.m_dists_using.keys()}
-        self.M_DISTS: list[int] = self.CONFS.values()
-        self.MAX_SD = self.CALC.get_max_sds()*0.99
-
-        self.point_colours = np.vstack([self.Palette.points_colour]*len(self.CALC))
-        self.clusters = np.array([0]*len(self.CALC))
-        self.num_clusters = 0
-        self.lassoing = False
         
-        P = P_dep = None
-        if self.MAX_SD > 20:
-            self.MAX_SD = 20
-        for i in tqdm(range(self.PRECISION), desc = "Finding projections..."):
-            sd = i*self.MAX_SD/self.PRECISION
-            ind = self.CALC.partition_data(sd)
-            u, v = self.CALC.optimise_plane(ind = ind, from_plane=P)
-            ud, vd = self.DEPCALC.optimise_plane(ind=ind, from_plane=P_dep)
-            P = np.vstack([u, v])
-            P_dep = np.vstack([ud, vd])
-            self.PREPLOTS = P[np.newaxis, :, :] if i==0 else np.vstack([self.PREPLOTS, P[np.newaxis, :, :]])
-            self.DEPPLOTS = P_dep[np.newaxis, :, :] if i==0 else np.vstack([self.DEPPLOTS, P_dep[np.newaxis, :, :]])
-
+        self.build_preplots()
         self.build_widgets()
-        
-        self.dep_attr_labels = []
         self.update(self.PREPLOTS[self.points_ind], self.DEPPLOTS[self.points_ind])
 
 
+    def build_preplots(self):
+        """Build preplots to be referenced later. Called in __init__"""
+        P = P_dep = None
+        for i in tqdm(range(self.PRECISION), desc = "Finding projections..."):
+            sd = i*self.MAX_SD/self.PRECISION
+            ind = self.CALC.partition_data(sd)
+            
+            P = self.CALC.optimise_plane(ind = ind, from_plane=P)
+            P_dep = self.DEPCALC.optimise_plane(ind=ind, from_plane=P_dep)
+            
+            self.PREPLOTS = P[np.newaxis, :, :] if i==0 else np.vstack([self.PREPLOTS, P[np.newaxis, :, :]])
+            self.DEPPLOTS = P_dep[np.newaxis, :, :] if i==0 else np.vstack([self.DEPPLOTS, P_dep[np.newaxis, :, :]])
+    
+
     def update(self, proj: ndarray | None = None, dep_proj = None):
+        """
+        Re-plot everything. Called when:
+        - changing projection
+        - changing point colours
+        - resizing box
+        - changing ellipses
+        """
         super().update(proj)
 
         if dep_proj is not None:
@@ -94,6 +108,8 @@ class InteractiveFunction(InteractiveGraph):
         if self.xd0*self.xd1 < 0 and self.yd0*self.yd1 < 0:  # origin is in frame
             for proj_axis in self.curr_dep_proj.T*self.axdeplength:
                 self.axdep.plot([0, proj_axis[0]], [0, proj_axis[1]], c = self.Palette.axes_colour, linewidth = 1)
+                
+                # axis label
                 new_label = self.axdep.text(proj_axis[0], proj_axis[1], self.DEPCALC.get_attrs()[i], picker=True)
                 new_label.set_bbox(dict(facecolor=self.Palette.graph_bg, alpha=0.7, linewidth=0, boxstyle=BoxStyle.Round(pad=0.05)))
                 self.dep_attr_labels.append(new_label)
@@ -108,75 +124,95 @@ class InteractiveFunction(InteractiveGraph):
 
         self.fig.canvas.draw_idle()
 
-    def zoomed_dep(self, event):
-        self.xd0, self.xd1 = event.get_xlim()
-        self.yd0, self.yd1 = event.get_ylim()
+
+    def zoomed_dep(self, event_ax):
+        """Update plot boundaries. Called on pan/zoom"""
+        self.xd0, self.xd1 = event_ax.get_xlim()
+        self.yd0, self.yd1 = event_ax.get_ylim()
         self.axdeplength = min(self.xd1-self.xd0, self.yd1-self.yd0)*0.25
         self.update()
 
-    def show_random(self, event):
+
+    def show_random(self):
+        """Show random projections, call when 'R' pressed"""
         P = self.CALC.get_random_plane()
         P_dep = self.DEPCALC.get_random_plane()
         self.update(P, P_dep)
 
+
     def key_press(self, event):
+        """Manages all key presses. Mostly handled in parent class"""
         super().key_press(event)
-        if event.key == "m":
+        if event.key == "m":  # print second projection
             print(np.round(self.curr_dep_proj, 4))
 
+
     def change_cutoff(self, val=None):
+        """Moves projections to optimal based on slider cutoff. Called when slider is changed"""
         proj = super().change_cutoff(val, pres = self.PREPLOTS, update=False)
         dep_proj = super().change_cutoff(val, pres = self.DEPPLOTS, update=False)
         self.update(proj, dep_proj)
 
+
     def move_by_select(self):
+        """Changes projection to best show lassoed points, called when points lassoed and 'enter' pressed."""
         self.curr_proj = super().move_by_select(update = False)
         self.curr_dep_proj = super().move_by_select(calc = self.DEPCALC, proj = self.curr_dep_proj, update = False)
         self.lasso.disconnect_events()
 
+
     def pick_axes(self, event):
-        if event.artist.axes == self.ax:
+        """Called when a pickable object is selected. This includes cluster rectangles and axes."""
+        if event.artist.axes == self.ax:  # move independent axes
             proj = super().pick_axes(event, update = False)
             self.curr_proj = proj if proj is not None else self.curr_proj
             self.dragging_dep = False
-        elif event.artist.axes == self.axdep:
+        elif event.artist.axes == self.axdep:  # move dependent axes
             dep_proj = super().pick_axes(event, self.DEPCALC, self.curr_dep_proj, update = False)
             self.curr_dep_proj = dep_proj if dep_proj is not None else self.curr_dep_proj
             self.dragging_dep = True
         else:
-            if event.mouseevent.button is MouseButton.RIGHT:
+            if event.mouseevent.button is MouseButton.RIGHT:  # select cluster
                 self.curr_proj = super().pick_axes(event, update=False)
                 self.curr_dep_proj = super().pick_axes(event, calc=self.DEPCALC, proj = self.curr_dep_proj, update=False)
-            else:
+            else:  # delete cluster
                 super().pick_axes(event)
 
         self.update()
+
     
     def drag_axes(self, event):
+        """Used to drag axes around, called when axis picked."""
         if self.dragging_dep:
             self.curr_dep_proj = super().drag_axes(event, proj = self.curr_dep_proj, axlength = self.axdeplength, update = False)
         else:
             self.curr_proj = super().drag_axes(event, update = False)
         self.update()
 
+
     def show_ellipse_dep(self, label):
+        """Toggles an ellipse on the right. Called when checkbox ticked or unticked."""
         self.m_dists_using_dep[label] = not self.m_dists_using_dep[label]
         self.update()
 
+
     def build_widgets(self):
+        """Builds and modifies widgets from parent class"""
         super().build_widgets(ellipses=False)
+        
+        # additional axes
         self.axdep = self.fig.add_axes(self.LAYOUT["axdep"], facecolor = self.Palette.graph_bg)
         self.axcheckbox2 = self.fig.add_axes(self.LAYOUT["axcheckbox2"], facecolor = self.Palette.slider_bg)
         
+        # adjust dependent plot limits
         self.axdep.set_aspect('equal', adjustable='box')
         self.xd0 = self.yd0 = -self.DEPCALC.get_max_norm()
         self.xd1 = self.yd1 = self.DEPCALC.get_max_norm()
         self.axdeplength = 0.5*self.DEPCALC.get_max_norm()
 
+        # checkboxes
         self.Palette.remove_border(self.axcheckbox)
         self.Palette.remove_border(self.axcheckbox2)
-        #self.axcheckbox.spines['right'].set_color(self.Palette.slider_bg)
-        #self.axcheckbox2.spines['left'].set_color(self.Palette.slider_bg)
         self.m_checkbox = CheckButtons(
             ax = self.axcheckbox,
             labels = list(self.CONFS.keys()),
@@ -196,19 +232,6 @@ class InteractiveFunction(InteractiveGraph):
         )
         self.m_checkbox2.on_clicked(self.show_ellipse_dep)
 
-
+        # adjust titles
         self.axclusters.set_title("")
         self.axslider.set_title("standard deviations")
-
-
-
-'''
-# Save to binary file
-if __name__=='__main__':
-    #this_graph = InteractiveGraph(data="samples/p5pexample/np.csv", cov_data="samples/p5pexample/cov_mat.csv", mean_data="samples/p5pexample/centre_of_ellipses.csv")
-    
-    ifunc = InteractiveFunction(dep_data="samples/bphys/testinput.csv", data="samples/bphys/testoutput.csv", cov_data = "samples/bphys/cov.csv")
-    #writefile = input("Enter path to save widget (.pickle extension): ")
-    #pl.dump((this_graph.PREPLOTS, this_graph.CALC, this_graph.limits), open(writefile,'wb'))
-    plt.show()
-'''

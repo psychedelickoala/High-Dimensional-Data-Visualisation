@@ -216,10 +216,44 @@ class Calculator:
 
         return u, v
     
+    @staticmethod
+    def move_axis(old_proj: np.ndarray, axis: int, new_pos: tuple[float], precision = 0) -> np.ndarray:
+        u, v = old_proj[0], old_proj[1]
+        a = np.delete(u, axis)
+        b = np.delete(v, axis)
+        A = new_pos[0] if np.linalg.norm(new_pos) < (1-precision) else (1 - precision)*(new_pos[0])/np.linalg.norm(new_pos)
+        B = new_pos[1] if np.linalg.norm(new_pos) < (1-precision) else (1 - precision)*(new_pos[1])/np.linalg.norm(new_pos)
+
+        au = a/np.linalg.norm(a)
+        bu = b/np.linalg.norm(b)
+        m = (au + bu)
+        try:
+            m /= np.linalg.norm(m)
+            c2 = -A*B/np.sqrt((1 - A**2)*(1 - B**2))
+            c, s = np.sqrt((1 + c2)/2), np.sqrt((1 - c2)/2)
+
+            ap = (au - np.dot(au, m)*m)
+            ap /= np.linalg.norm(ap)
+            bp = (bu - np.dot(bu, m)*m)
+            bp /= np.linalg.norm(bp)
+
+            au, bu = c*m + s*ap, c*m + s*bp
+        
+        except RuntimeWarning: # all other vectors in a line
+            u[axis] = new_pos[0]
+            v[axis] = new_pos[1]
+            u, v = Calculator.orthonormalise(u, v)
+        
+        else:
+            a, b = au*np.sqrt(1-A**2), bu*np.sqrt(1-B**2)
+            u = np.insert(a, axis, A)
+            v = np.insert(b, axis, B)
+
+        return np.vstack([u, v])
+
     def get_proj_ellipses(self, P: np.ndarray, m_dists: list[float] = [1, 2, 3]) -> list[np.ndarray]:
         M = P @ self.__covariance @ P.T
         T = np.linalg.cholesky(M)
-        #proj_mean = P @ self.__cov_mean
         return [(dist * T @ self.__circle) for dist in m_dists]
 
     @staticmethod
@@ -283,44 +317,36 @@ class Calculator:
         P = K @ np.linalg.inv(B)
         return self.orthonormalise(P[0], P[1])
 
-    def optimise_plane(self, sd: float = None, points: np.ndarray | None = None, ind = None, factor: float | None = None, \
-        from_plane: np.ndarray | None = None, step: float = 0.01, tol: float = 0.00001, verbose: bool = False) -> tuple[np.ndarray]:
+    def optimise_plane(self, ind = None, factor: float | None = None, from_plane: np.ndarray | None = None, \
+                       step: float = 0.01, tol: float = 0.00001, verbose: bool = False) -> np.ndarray:
         """
         Numerically searches for the plane that will maximise total_m_dist.
-
-        :optional param cutoff: float representing the minimum Mahalanobis distance that constitutes an 'outlier'
-        :optional param factor: the factor by which points with a greater Mahalanobis distance are prioritised
-        :optional param step: small float; size of the step taken in n-dimensional space on each iteration
-        :optional param tol: small float; tolerance, will accept an answer once it is increasing by less than tol
-        :optional param verbose: boolean; whether or not to print progress
-
-        :return: tuple of arrays; orthonormal vectors spanning optimal plane.
         """
-
-   
-        if points is None:
-            if sd is None:
-                if ind is None:
-                    W = self.__data - self.__cov_mean
-                else:
-                    W = self.__data[:, ind:] - self.__cov_mean
-            else:
-                W = self.get_outliers(sd) - self.__cov_mean
+        
+        # set W
+        if ind is None:
+            W = self.__data - self.__cov_mean
+        elif type(ind) is np.ndarray:
+            W = self.__data[:, ind] - self.__cov_mean
         else:
-            W = points - self.__cov_mean
+            W = self.__data[:, ind:] - self.__cov_mean
 
+        # set initial u, v
         if from_plane is None:
             u, v = self.__optimise_slice_plane(W)
         else:
             u, v = from_plane[0], from_plane[1]
+        
+        # set factor (not used)
         mod = None if factor is None else np.log(factor)
 
+        # set d, prev_d
         d = self.total_m_dist(u, v, W, mod)
         if verbose:
             print(f"Beginning optimisation with total distance of {d}")
-
         prev_d = d - (tol + 1)
         
+        # gradient descent
         while d - prev_d > tol:
             if verbose:
                 print(f"new total dist: {d}. increment: {d - prev_d}")
@@ -328,9 +354,12 @@ class Calculator:
             u, v = self.orthonormalise(u + step*du, v + step*dv)
             prev_d = d
             d = self.total_m_dist(u, v, W, mod)
+
+        # print results
         if verbose:
             print(f"Process completed with distance {d}. Projected onto plane: ")
             print(u)
             print(v)
-        return u, v
+
+        return np.vstack([u, v])
     
