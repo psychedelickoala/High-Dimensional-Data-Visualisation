@@ -3,6 +3,7 @@ from matplotlib.backend_bases import MouseButton
 from numpy import ndarray
 from tqdm import tqdm
 import numpy as np
+from scipy.stats import norm, chi2
 from calculator import Calculator
 from interactive_graph import InteractiveGraph
 from matplotlib.widgets import CheckButtons
@@ -19,6 +20,7 @@ class InteractiveFunction(InteractiveGraph):
 
     # constant
     DEPCALC: Calculator = None
+    DEPCONFS: dict = None
     LAYOUT: dict = {
         "ax" : [0.03, 0.25, 0.45, 0.7],
         "axdep" : [0.52, 0.25, 0.45, 0.7],
@@ -39,6 +41,7 @@ class InteractiveFunction(InteractiveGraph):
 
     # variable
     m_dists_using_dep: dict = {"1σ": False, "2σ": True, "3σ": False, "5σ": False, "8σ": False}
+    ellipse_with_slider_dep = False
     dep_attr_labels: list = []
     axdeplength: float = None
     xd0 = xd1 = yd0 = yd1 = None
@@ -54,6 +57,7 @@ class InteractiveFunction(InteractiveGraph):
         """Initialise interactive function"""
         super().__init__(data, cov_data, mean_data, update = False)
         self.DEPCALC = Calculator(data=dep_data, cov=cov_dep, cov_mean=mean_dep, sort = self.CALC.get_sort())
+        self.DEPCONFS: dict = {sdstr : np.sqrt(chi2.isf(2*norm.sf(float(sdstr[:-1])), self.DEPCALC.get_dim())) for sdstr in self.m_dists_using.keys()}
         
         self.build_preplots()
         self.build_widgets()
@@ -97,10 +101,17 @@ class InteractiveFunction(InteractiveGraph):
 
 
         # ellipses
-        dep_ellipses = self.DEPCALC.get_proj_ellipses(self.curr_dep_proj, [self.CONFS[m] for m in self.CONFS if self.m_dists_using_dep[m]])
-        elcolours = [i for i, v in enumerate(self.m_dists_using_dep.values()) if v]
-        for i, ellipse in zip(elcolours, dep_ellipses):
-            self.axdep.plot(ellipse[0], ellipse[1], c=self.Palette.ellipse_colours[i], linewidth = 2)
+        if self.ellipse_with_slider_dep:
+            sds = self.cutoff_slider.val
+            m_dist = np.sqrt(chi2.isf(2*norm.sf(float(sds)), self.DEPCALC.get_dim()))
+            ellipse = self.DEPCALC.get_proj_ellipses(self.curr_dep_proj, [m_dist])[0]
+            self.axdep.plot(ellipse[0], ellipse[1], c=self.Palette.ellipse_colours[-1], linewidth = 2)
+
+        else:
+            dep_ellipses = self.DEPCALC.get_proj_ellipses(self.curr_dep_proj, [self.DEPCONFS[m] for m in self.DEPCONFS if self.m_dists_using_dep[m]])
+            elcolours = [i for i, v in enumerate(self.m_dists_using_dep.values()) if v]
+            for i, ellipse in zip(elcolours, dep_ellipses):
+                self.axdep.plot(ellipse[0], ellipse[1], c=self.Palette.ellipse_colours[i], linewidth = 2)
 
         # axes
         i = 0
@@ -192,7 +203,10 @@ class InteractiveFunction(InteractiveGraph):
 
     def show_ellipse_dep(self, label):
         """Toggles an ellipse on the right. Called when checkbox ticked or unticked."""
-        self.m_dists_using_dep[label] = not self.m_dists_using_dep[label]
+        if label in self.m_dists_using_dep:
+            self.m_dists_using_dep[label] = not self.m_dists_using_dep[label]
+        else:  # toggle self.ellipse_with_slider_dep
+            self.ellipse_with_slider_dep = not self.ellipse_with_slider_dep
         self.update()
 
 
@@ -215,22 +229,23 @@ class InteractiveFunction(InteractiveGraph):
         self.Palette.remove_border(self.axcheckbox2)
         self.m_checkbox = CheckButtons(
             ax = self.axcheckbox,
-            labels = list(self.CONFS.keys()),
-            label_props={'color': self.Palette.ellipse_colours, "size":[14]*len(self.CONFS), "family":['serif']*len(self.CONFS)},
+            labels = list(self.CONFS.keys()) + ["slider"],
+            label_props={'color': self.Palette.ellipse_colours, "size":[14]*(len(self.CONFS)+1), "family":['serif']*(len(self.CONFS)+1)},
             frame_props={'edgecolor': self.Palette.ellipse_colours, "facecolor":'white'},
             check_props={'facecolor': self.Palette.ellipse_colours},
-            actives=list(self.m_dists_using.values())
+            actives=list(self.m_dists_using.values()) + [False]
         )
         self.m_checkbox.on_clicked(self.show_ellipse)
         self.m_checkbox2 = CheckButtons(
             ax = self.axcheckbox2,
-            labels = list(self.CONFS.keys()),
-            label_props={'color': self.Palette.ellipse_colours, "size":[14]*len(self.CONFS), "family":['serif']*len(self.CONFS)},
+            labels = list(self.DEPCONFS.keys()) + ["slider"],
+            label_props={'color': self.Palette.ellipse_colours, "size":[14]*(len(self.DEPCONFS)+1), "family":['serif']*(len(self.DEPCONFS)+1)},
             frame_props={'edgecolor': self.Palette.ellipse_colours, "facecolor":'white'},
             check_props={'facecolor': self.Palette.ellipse_colours},
-            actives=list(self.m_dists_using_dep.values())
+            actives=list(self.m_dists_using_dep.values()) + [False]
         )
         self.m_checkbox2.on_clicked(self.show_ellipse_dep)
+
 
         # adjust titles
         self.axclusters.set_title("")

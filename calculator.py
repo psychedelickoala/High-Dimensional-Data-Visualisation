@@ -126,14 +126,15 @@ class Calculator:
         self.__ellipsoid: np.ndarray = np.linalg.inv(self.__covariance)
 
 
-    def get_clusters(self, inds: np.ndarray | int) -> np.ndarray:
+    def get_clusters(self, inds: np.ndarray | int, m_clustering = False) -> np.ndarray:
         """Sort data at given indices into up to 9 clusters."""
 
         if type(inds) is not np.ndarray:
             inds = np.array(range(inds, len(self)))
 
         # Uncomment below to use elliptical, rather than euclidean, distance
-        #B = np.linalg.cholesky(self.__ellipsoid).T
+        if m_clustering:
+            B = np.linalg.cholesky(self.__ellipsoid).T
         
         points = self.__data[:, inds]
         num_points = points.shape[1]
@@ -141,7 +142,10 @@ class Calculator:
         dist_mat = np.zeros((num_points, num_points))
         for i in tqbar(range(num_points), desc = "Building distances matrix..."):
             for j in range(i, num_points):
-                dist_mat[i, j] = dist_mat[j, i] = np.linalg.norm((points[:, i] - points[:, j]))
+                if m_clustering:
+                    dist_mat[i, j] = dist_mat[j, i] = np.linalg.norm(B @ (points[:, i] - points[:, j]))
+                else:
+                    dist_mat[i, j] = dist_mat[j, i] = np.linalg.norm((points[:, i] - points[:, j]))
 
         print("Finding minimum spanning tree...")
         X = minimum_spanning_tree(csr_array(dist_mat))
@@ -225,13 +229,7 @@ class Calculator:
         try:
             m = Calculator.__unit(m)
             p = Calculator.__unit(p)
-        
-        except RuntimeWarning: # all other vectors in a line
-            u[axis] = new_pos[0]
-            v[axis] = new_pos[1]
-            u, v = Calculator.orthonormalise(u, v)
-        
-        else:
+            
             # Find cos, sin of angle between a and b
             c2 = -A*B/np.sqrt((1 - A**2)*(1 - B**2))
             c, s = np.sqrt((1 + c2)/2), np.sqrt((1 - c2)/2)
@@ -239,7 +237,13 @@ class Calculator:
             # Resize a and b
             au, bu = c*m + s*p, c*m - s*p
             a, b = au*np.sqrt(1-A**2), bu*np.sqrt(1-B**2)
-
+        
+        except RuntimeWarning: # all other vectors in a line
+            u[axis] = new_pos[0]
+            v[axis] = new_pos[1]
+            u, v = Calculator.orthonormalise(u, v)
+        
+        else:
             u = np.insert(a, axis, A)
             v = np.insert(b, axis, B)
 

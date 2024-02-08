@@ -53,7 +53,7 @@ class InteractiveGraph:
         @classmethod
         def __init__(cls, num_points, num_ellipses) -> None:
             """Sets ellipse colours and redundant points alpha value, which depends on IG attributes."""
-            cls.ellipse_colours = np.outer(np.sqrt(np.sqrt(np.reciprocal(np.array(range(1, num_ellipses+1)).astype(float)))), cls.ellipse_colour)
+            cls.ellipse_colours = np.outer(np.sqrt(np.sqrt(np.reciprocal(np.array(range(1, num_ellipses+2)).astype(float)))), cls.ellipse_colour)
             alphas = (np.ones((10, 1)))/np.sqrt(num_points)
             cls.cluster_colours_light = np.hstack([cls.cluster_colours[:, :3], alphas])
         
@@ -97,6 +97,8 @@ class InteractiveGraph:
     clusters: np.ndarray = None
     clusters_in_use: list[int] = [0]
     num_clusters: int = 0
+    use_m_clustering: bool = False
+    ellipse_with_slider = False
     m_dists_using: dict = {"1σ": False, "2σ": True, "3σ": False, "5σ": False, "8σ": False}
     attr_labels: list = []
     suggest_ind: np.ndarray = None
@@ -127,10 +129,10 @@ class InteractiveGraph:
     def __init__(self, data, cov_data = None, mean_data = None, update = True) -> None:
         """Initialise, building preplots, widgets, Palette and Calculator"""
         self.CALC = Calculator(data=data, cov=cov_data, cov_mean=mean_data)
-        self.CONFS: dict = {sdstr : np.sqrt(chi2.ppf((2*norm.cdf(float(sdstr[:-1])) - 1), self.CALC.get_dim())) for sdstr in self.m_dists_using.keys()}
+        self.CONFS: dict = {sdstr : np.sqrt(chi2.isf(2*norm.sf(float(sdstr[:-1])), self.CALC.get_dim())) for sdstr in self.m_dists_using.keys()}
         self.MAX_SD = self.CALC.get_max_sds()*0.99
-        if self.MAX_SD > 40:
-            self.MAX_SD = 40
+        if self.MAX_SD > 35:
+            self.MAX_SD = 35
 
         self.Palette(len(self.CALC), len(self.m_dists_using))
 
@@ -173,10 +175,18 @@ class InteractiveGraph:
         self.curr_collection = self.ax.scatter(proj_points[0], proj_points[1], c = point_colours, marker = ".")
         
         # ellipses
-        ellipses = self.CALC.get_proj_ellipses(self.curr_proj, [self.CONFS[m] for m in self.CONFS if self.m_dists_using[m]])
-        elcolours = [i for i, v in enumerate(self.m_dists_using.values()) if v]  # getting correct colour index
-        for i, ellipse in zip(elcolours, ellipses):
-            self.ax.plot(ellipse[0], ellipse[1], c=self.Palette.ellipse_colours[i], linewidth = 2)
+        if self.ellipse_with_slider:
+            sds = self.cutoff_slider.val
+            m_dist = np.sqrt(chi2.isf(2*norm.sf(float(sds)), self.CALC.get_dim()))
+            ellipse = self.CALC.get_proj_ellipses(self.curr_proj, [m_dist])[0]
+            self.ax.plot(ellipse[0], ellipse[1], c=self.Palette.ellipse_colours[-1], linewidth = 2)
+
+        else:
+
+            ellipses = self.CALC.get_proj_ellipses(self.curr_proj, [self.CONFS[m] for m in self.CONFS if self.m_dists_using[m]])
+            elcolours = [i for i, v in enumerate(self.m_dists_using.values()) if v]  # getting correct colour index
+            for i, ellipse in zip(elcolours, ellipses):
+                self.ax.plot(ellipse[0], ellipse[1], c=self.Palette.ellipse_colours[i], linewidth = 2)
 
         # axes
         i = 0
@@ -414,7 +424,7 @@ class InteractiveGraph:
         self.ax.set_title("Clustering...")
         self.fig.canvas.draw_idle()
         
-        self.num_clusters, new_clusters = self.CALC.get_clusters(self.points_ind)
+        self.num_clusters, new_clusters = self.CALC.get_clusters(self.points_ind, self.use_m_clustering)
 
         # set internal clusters
         if type(self.points_ind) is np.ndarray:
@@ -444,6 +454,7 @@ class InteractiveGraph:
         print("Key presses")
         print("R: Show random projection")
         print("Z: Clear all clusters")
+        print("V: Toggle clustering distance, EUCLIDEAN/MAHALANOBIS")
         print("N: Print CSV file line numbers of selected points")
         print("M: Print the current projection matrix")
         print("\nCluster controls")
@@ -471,10 +482,15 @@ class InteractiveGraph:
             self.update()
 
         elif event.key == "r":  # show random projection
-            self.show_random(event)
+            self.show_random()
 
         elif event.key == "z":  # clear clusters
             self.clear_clusters()
+
+        elif event.key == "v":  # toggle auto cluster
+            self.use_m_clustering = not self.use_m_clustering
+            msg = "Clustering distance set to: "+ ("MAHALANOBIS" if self.use_m_clustering else "EUCLIDEAN")
+            print(msg)
 
         elif event.key == "m":  # print projection
             print("\n~~ SELECTED PROJECTION ~~")
@@ -488,7 +504,10 @@ class InteractiveGraph:
 
     def show_ellipse(self, label):
         """Toggles an ellipse. Called when checkbox ticked or unticked."""
-        self.m_dists_using[label] = not self.m_dists_using[label]
+        if label in self.m_dists_using:
+            self.m_dists_using[label] = not self.m_dists_using[label]
+        else:  # toggle ellipse/slider connection
+            self.ellipse_with_slider = not self.ellipse_with_slider
         self.update()
 
 
@@ -537,11 +556,11 @@ class InteractiveGraph:
 
             self.m_checkbox = CheckButtons(
                 ax = self.axcheckbox,
-                labels = self.CONFS.keys(),
-                label_props={'color': self.Palette.ellipse_colours, "size":[14]*len(self.CONFS), "family":['serif']*len(self.CONFS)},
+                labels = list(self.CONFS.keys()) + ["slider"],
+                label_props={'color': self.Palette.ellipse_colours, "size":[14]*(len(self.CONFS)+1), "family":['serif']*(len(self.CONFS)+1)},
                 frame_props={'edgecolor': self.Palette.ellipse_colours, "facecolor":'white'},
                 check_props={'facecolor': self.Palette.ellipse_colours},
-                actives=self.m_dists_using.values()
+                actives=list(self.m_dists_using.values()) + [False]
             )
             self.m_checkbox.on_clicked(self.show_ellipse)
 
