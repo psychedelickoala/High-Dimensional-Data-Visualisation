@@ -1,0 +1,23 @@
+WEATHER
+python3 hddv.py -sp samples/examples_shapley/ data_weather.csv -ci sigma_weather.csv -mi center_weather.csv
+
+TOPGEAR
+python3 hddv.py -sp samples/examples_shapley/ data_topgear.csv -ci sigma_topgear.csv -mi center_topgear.csv
+
+P5P
+python3 hddv.py -sp samples/p5pexample/ np.csv -ci cov_mat.csv -mi centre_of_ellipses.csv
+
+BPHYS
+python3 hddv.py -sp samples/bphys/ testoutput.csv -ci cov.csv -d testinput.csv
+
+SPACED-CLUSTERS
+python3 hddv.py samples/spaced_clusters.csv
+
+V with scaling
+python3 hddv.py -sp samples/ v1.csv -d v2.csv -sc -scd
+
+LIVER
+python3 hddv.py -sp samples/dde/ liver_f.csv -ci liver_f_vc.csv -sc
+
+
+

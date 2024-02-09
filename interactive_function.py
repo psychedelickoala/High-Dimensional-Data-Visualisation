@@ -53,10 +53,10 @@ class InteractiveFunction(InteractiveGraph):
     m_checkbox2: CheckButtons = None
 
     
-    def __init__(self, data, dep_data=None, cov_data=None, mean_data=None, cov_dep=None, mean_dep=None) -> None:
+    def __init__(self, data, dep_data=None, cov_data=None, mean_data=None, cov_dep=None, mean_dep=None, scale = False, scale_dep = False) -> None:
         """Initialise interactive function"""
-        super().__init__(data, cov_data, mean_data, update = False)
-        self.DEPCALC = Calculator(data=dep_data, cov=cov_dep, cov_mean=mean_dep, sort = self.CALC.get_sort())
+        super().__init__(data, cov_data, mean_data, update = False, scale=scale)
+        self.DEPCALC = Calculator(data=dep_data, cov=cov_dep, cov_mean=mean_dep, sort = self.CALC.get_sort(), scale=scale_dep)
         self.DEPCONFS: dict = {sdstr : np.sqrt(chi2.isf(2*norm.sf(float(sdstr[:-1])), self.DEPCALC.get_dim())) for sdstr in self.m_dists_using.keys()}
         
         self.build_preplots()

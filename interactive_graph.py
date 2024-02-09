@@ -69,6 +69,7 @@ class InteractiveGraph:
     MAX_SD: float = None
     PRECISION: int = 20
     PREPLOTS: np.ndarray = None
+    CLUSTER_METHODS = ["EUCLIDEAN", "MAHALANOBIS", "STANDARDISE POINTS"]
     CALC: Calculator = None
     CONFS: dict = None
     LAYOUT: dict = {
@@ -97,7 +98,7 @@ class InteractiveGraph:
     clusters: np.ndarray = None
     clusters_in_use: list[int] = [0]
     num_clusters: int = 0
-    use_m_clustering: bool = False
+    clustering_dist: bool = False
     ellipse_with_slider = False
     m_dists_using: dict = {"1σ": False, "2σ": True, "3σ": False, "5σ": False, "8σ": False}
     attr_labels: list = []
@@ -126,9 +127,9 @@ class InteractiveGraph:
     cluster_button: Button = None
 
 
-    def __init__(self, data, cov_data = None, mean_data = None, update = True) -> None:
+    def __init__(self, data, cov_data = None, mean_data = None, update = True, scale = False) -> None:
         """Initialise, building preplots, widgets, Palette and Calculator"""
-        self.CALC = Calculator(data=data, cov=cov_data, cov_mean=mean_data)
+        self.CALC = Calculator(data=data, cov=cov_data, cov_mean=mean_data, scale=scale)
         self.CONFS: dict = {sdstr : np.sqrt(chi2.isf(2*norm.sf(float(sdstr[:-1])), self.CALC.get_dim())) for sdstr in self.m_dists_using.keys()}
         self.MAX_SD = self.CALC.get_max_sds()*0.99
         if self.MAX_SD > 35:
@@ -424,7 +425,7 @@ class InteractiveGraph:
         self.ax.set_title("Clustering...")
         self.fig.canvas.draw_idle()
         
-        self.num_clusters, new_clusters = self.CALC.get_clusters(self.points_ind, self.use_m_clustering)
+        self.num_clusters, new_clusters = self.CALC.get_clusters(self.points_ind, self.clustering_dist)
 
         # set internal clusters
         if type(self.points_ind) is np.ndarray:
@@ -454,7 +455,7 @@ class InteractiveGraph:
         print("Key presses")
         print("R: Show random projection")
         print("Z: Clear all clusters")
-        print("V: Toggle clustering distance, EUCLIDEAN/MAHALANOBIS")
+        print("V: Toggle clustering distance, EUCLIDEAN/MAHALANOBIS/STANDARDISE POINTS")
         print("N: Print CSV file line numbers of selected points")
         print("M: Print the current projection matrix")
         print("\nCluster controls")
@@ -488,8 +489,8 @@ class InteractiveGraph:
             self.clear_clusters()
 
         elif event.key == "v":  # toggle auto cluster
-            self.use_m_clustering = not self.use_m_clustering
-            msg = "Clustering distance set to: "+ ("MAHALANOBIS" if self.use_m_clustering else "EUCLIDEAN")
+            self.clustering_dist = (self.clustering_dist + 1)%3
+            msg = "Clustering distance set to: "+ self.CLUSTER_METHODS[self.clustering_dist]
             print(msg)
 
         elif event.key == "m":  # print projection

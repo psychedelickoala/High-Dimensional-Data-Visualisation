@@ -11,13 +11,13 @@ class Calculator:
     A class to store and process information about a dataset passed on initialisation.
     """
 
-    def __init__(self, data: str | np.ndarray, ellipse_res: int = 60, cov = None, cov_mean = None, sort = None) -> None:
+    def __init__(self, data: str | np.ndarray, ellipse_res: int = 60, cov = None, cov_mean = None, sort = None, scale = False) -> None:
         """
         Initialises calculator.
         Reads and sorts data and constructs circle. These can be reset later.
         """
 
-        self.set_data(data, cov, cov_mean, sort)
+        self.set_data(data, cov, cov_mean, sort, scale)
         self.set_ellipse_res(ellipse_res)
 
 
@@ -80,7 +80,7 @@ class Calculator:
         return ind
 
 
-    def set_data(self, data: str | np.ndarray, cov, cov_mean, sort) -> None:
+    def set_data(self, data: str | np.ndarray, cov, cov_mean, sort, scale) -> None:
         """
         Set data, covariance matrix and ellipse centroid for calculator to analyse.
         """
@@ -97,6 +97,11 @@ class Calculator:
                 self.csv_dist = 1
         else:
             unsorted_data = data
+
+        # scale data
+        if scale:
+            unsorted_data /= np.std(unsorted_data, axis = 1, keepdims=True)
+
 
         if type(cov) is str:
             cov = np.loadtxt(fname = cov, dtype=float, delimiter=",", skiprows=0)
@@ -126,26 +131,34 @@ class Calculator:
         self.__ellipsoid: np.ndarray = np.linalg.inv(self.__covariance)
 
 
-    def get_clusters(self, inds: np.ndarray | int, m_clustering = False) -> np.ndarray:
+    def get_clusters(self, inds: np.ndarray | int, clustering_dist = 0) -> np.ndarray:
         """Sort data at given indices into up to 9 clusters."""
 
         if type(inds) is not np.ndarray:
             inds = np.array(range(inds, len(self)))
 
         # Uncomment below to use elliptical, rather than euclidean, distance
-        if m_clustering:
-            B = np.linalg.cholesky(self.__ellipsoid).T
+
         
         points = self.__data[:, inds]
         num_points = points.shape[1]
 
+
+        if clustering_dist == 1:  # mahalanobis
+            B = np.linalg.cholesky(self.__ellipsoid).T
+            points = B @ points
+        elif clustering_dist == 2:  # standardising
+            points -= np.mean(points, axis=0, keepdims = True)
+            points /= np.std(points, axis = 0, keepdims=True)
+
+        
         dist_mat = np.zeros((num_points, num_points))
         for i in tqbar(range(num_points), desc = "Building distances matrix..."):
             for j in range(i, num_points):
-                if m_clustering:
-                    dist_mat[i, j] = dist_mat[j, i] = np.linalg.norm(B @ (points[:, i] - points[:, j]))
-                else:
-                    dist_mat[i, j] = dist_mat[j, i] = np.linalg.norm((points[:, i] - points[:, j]))
+                #if clustering_dist==1:
+                    #dist_mat[i, j] = dist_mat[j, i] = np.linalg.norm(points[:, i] - points[:, j])
+                #else:
+                dist_mat[i, j] = dist_mat[j, i] = np.linalg.norm((points[:, i] - points[:, j]))
 
         print("Finding minimum spanning tree...")
         X = minimum_spanning_tree(csr_array(dist_mat))
